@@ -11,7 +11,13 @@ import NewfeedBg from '../assets/newfeed.svg';
 import AppText from '../components/AppText';
 const AVATAR_SIZE = 48;
 const AVATAR_BORDER = 3;
-const defaultAvatarUrl = 'https://ui-avatars.com/api/?name=GV&background=E0E0E0&color=757575&size=128';
+
+// Helper function để tạo avatar URL nhất quán
+const getAvatarUrl = (student: any, avatarCache: {[key: string]: string}) => {
+    const studentId = student.id || student._id;
+    const studentName = student.name || student.fullname || student.studentName || 'Unknown';
+    return avatarCache[studentId] || `https://ui-avatars.com/api/?name=${encodeURIComponent(studentName)}&background=E0E0E0&color=757575&size=128`;
+};
 
 type Period = {
     periodNumber: number;
@@ -74,6 +80,7 @@ const StudentScreen = () => {
     const [now, setNow] = useState(new Date());
     const [periodDefinitions, setPeriodDefinitions] = useState<any[]>([]);
     const [communicationBooks, setCommunicationBooks] = useState<any[]>([]);
+    const [studentAvatars, setStudentAvatars] = useState<{[key: string]: string}>({});
     const [selectedDate, setSelectedDate] = useState<string>(() => {
         const today = new Date();
         return today.getFullYear() + '-' +
@@ -97,7 +104,6 @@ const StudentScreen = () => {
     }, []);
 
     const handleSelectDate = React.useCallback((date: string) => {
-        console.log('Chọn ngày:', date);
         setSelectedDate(date);
     }, []);
     const navigation = useNavigation();
@@ -109,19 +115,61 @@ const StudentScreen = () => {
     }, []);
 
     useEffect(() => {
-        const fetchParentAndStudents = async () => {
-            const parentStr = await AsyncStorage.getItem('parent');
-            console.log('parentStr:', parentStr);
-            if (parentStr) {
-                const parentObj = JSON.parse(parentStr);
-                setParent(parentObj);
-                setStudents(parentObj.students || []);
-                console.log('parentObj:', parentObj);
-                console.log('students set:', parentObj.students || []);
-            }
-        };
         fetchParentAndStudents();
     }, []);
+
+    const fetchParentAndStudents = async () => {
+        try {
+            const parentStr = await AsyncStorage.getItem('parent');
+            if (!parentStr) return;
+            
+            const parentObj = JSON.parse(parentStr);
+            setParent(parentObj);
+            
+            if (parentObj.students && parentObj.students.length > 0) {
+                setStudents(parentObj.students);
+                await fetchStudentAvatars(parentObj.students);
+            }
+        } catch (error: any) {
+            console.error('Error in fetchParentAndStudents:', error);
+        }
+    };
+
+    const fetchStudentAvatars = async (studentList: any[]) => {
+        const avatars: {[key: string]: string} = {};
+        
+        for (const student of studentList) {
+            try {
+                const studentId = student.id || student._id;
+                const studentName = student.name || student.fullname || student.studentName || 'Unknown';
+                
+                // Thử lấy avatar từ Photo model trước
+                const response = await api.get(`/students/${studentId}/photo/current`);
+                if (response.data && response.data.photoUrl) {
+                    avatars[studentId] = `${BASE_URL}${response.data.photoUrl}`;
+                } else {
+                    // Fallback về Student.avatarUrl hoặc default
+                    avatars[studentId] = student.avatarUrl 
+                        ? `${BASE_URL}${encodeURI(student.avatarUrl)}`
+                        : student.user?.avatarUrl
+                            ? `${BASE_URL}${encodeURI(student.user.avatarUrl)}`
+                            : `https://ui-avatars.com/api/?name=${encodeURIComponent(studentName)}&background=E0E0E0&color=757575&size=128`;
+                }
+            } catch (error) {
+                // Nếu API lỗi, dùng fallback
+                const studentId = student.id || student._id;
+                const studentName = student.name || student.fullname || student.studentName || 'Unknown';
+                
+                avatars[studentId] = student.avatarUrl 
+                    ? `${BASE_URL}${encodeURI(student.avatarUrl)}`
+                    : student.user?.avatarUrl
+                        ? `${BASE_URL}${encodeURI(student.user.avatarUrl)}`
+                        : `https://ui-avatars.com/api/?name=${encodeURIComponent(studentName)}&background=E0E0E0&color=757575&size=128`;
+            }
+        }
+        
+        setStudentAvatars(avatars);
+    };
 
     const fetchClassAndTimetable = async (classId: string) => {
         try {
@@ -158,19 +206,16 @@ const StudentScreen = () => {
     }, [activeIndex, students]);
 
     useEffect(() => {
-        console.log('students:', students);
-        console.log('activeIndex:', activeIndex);
         if (!students[activeIndex]?.id) return;
-        console.log('Gọi API communications/student với studentId:', students[activeIndex].id);
         const fetchData = async () => {
             const res = await api.get(`/communications/student/${students[activeIndex].id}`);
             setCommunicationBooks(res.data);
-            console.log('Dữ liệu nhận từ API:', res.data);
         };
         fetchData();
     }, [activeIndex, students]);
 
     if (!parent) return null;
+
     const activeStudent = students[activeIndex];
 
     // Lấy special lessons dựa vào grade level
@@ -211,7 +256,7 @@ const StudentScreen = () => {
 
     const onRefresh = async () => {
         setRefreshing(true);
-        await fetchParentAndStudents(); // hoặc các hàm fetch khác nếu cần
+        await fetchParentAndStudents();
         setRefreshing(false);
     };
 
@@ -221,9 +266,6 @@ const StudentScreen = () => {
         const cbDateStr = cbDate.getFullYear() + '-' +
             String(cbDate.getMonth() + 1).padStart(2, '0') + '-' +
             String(cbDate.getDate()).padStart(2, '0');
-        if (cbDateStr === selectedDate) {
-            console.log('Có dữ liệu cho ngày:', cbDateStr);
-        }
         return cbDateStr === selectedDate;
     });
 
@@ -244,7 +286,7 @@ const StudentScreen = () => {
                 {/* Tên học sinh căn giữa */}
                 <View className="flex-1 items-end">
                     <AppText style={{ fontFamily: 'Medium' }} className="text-lg font-bold text-[#002855] text-center" numberOfLines={1}>
-                        {activeStudent?.name || ''}
+                        {activeStudent?.name || activeStudent?.fullname || activeStudent?.studentName || ''}
                     </AppText>
                 </View>
 
@@ -252,7 +294,7 @@ const StudentScreen = () => {
                 <View className="flex-row items-center ml-2">
                     {students.map((stu: any, idx: number) => (
                         <TouchableOpacity
-                            key={stu.id}
+                            key={stu.id || stu._id || idx}
                             onPress={() => setActiveIndex(idx)}
                             className={idx === 0 ? '' : '-ml-2'}
                         >
@@ -262,7 +304,9 @@ const StudentScreen = () => {
                                     style={{ padding: 2, borderRadius: 999 }}
                                 >
                                     <Image
-                                        source={{ uri: `${BASE_URL}${encodeURI(stu.avatarUrl)}` }}
+                                        source={{ 
+                                            uri: getAvatarUrl(stu, studentAvatars)
+                                        }}
                                         className="w-10 h-10 rounded-full bg-white"
                                     />
                                 </LinearGradient>
@@ -270,12 +314,7 @@ const StudentScreen = () => {
                                 <View className="border border-gray-400 rounded-full p-0.5 bg-white">
                                     <Image
                                         source={{
-                                            uri:
-                                                stu.avatarUrl
-                                                    ? `${BASE_URL}${encodeURI(stu.avatarUrl)}`
-                                                    : stu.user?.avatarUrl
-                                                        ? `${BASE_URL}${encodeURI(stu.user.avatarUrl)}`
-                                                        : defaultAvatarUrl
+                                            uri: getAvatarUrl(stu, studentAvatars)
                                         }}
                                         className="w-10 h-10 rounded-full"
                                     />
@@ -325,7 +364,7 @@ const StudentScreen = () => {
                                                 ? `${BASE_URL}${encodeURI(t.avatarUrl)}`
                                                 : t.user?.avatarUrl
                                                     ? `${BASE_URL}${encodeURI(t.user.avatarUrl)}`
-                                                    : defaultAvatarUrl;
+                                                    : `https://ui-avatars.com/api/?name=${encodeURIComponent(t.fullname || 'GV')}&background=E0E0E0&color=757575&size=128`;
                                             return (
                                                 <Image
                                                     key={idx}
