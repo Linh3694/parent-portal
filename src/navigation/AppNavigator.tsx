@@ -14,6 +14,7 @@ import ContactBook from '../screens/MenuScreen/Daily/ContactBook';
 import Attendance from '../screens/MenuScreen/Daily/Attendance';
 import StudyReport from '../screens/MenuScreen/Daily/StudyReport';
 import Absence from '../screens/MenuScreen/Daily/Absence';
+import CreateLeaveRequest from '../screens/MenuScreen/Daily/Component/CreateLeaveRequest';
 import MenuService from '../screens/MenuScreen/Service/MenuService';
 import Health from '../screens/MenuScreen/Service/Health';
 import Bus from '../screens/MenuScreen/Service/Bus';
@@ -36,6 +37,7 @@ const AppNavigator = () => {
             <Stack.Screen name="Attendance" component={Attendance} />
             <Stack.Screen name="StudyReport" component={StudyReport} />
             <Stack.Screen name="Absence" component={Absence} />
+            <Stack.Screen name="CreateLeaveRequest" component={CreateLeaveRequest} />
             <Stack.Screen name="MenuService" component={MenuService} />
             <Stack.Screen name="Health" component={Health} />
             <Stack.Screen name="Bus" component={Bus} />
