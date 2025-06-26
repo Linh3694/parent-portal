@@ -1,15 +1,13 @@
-import React, { useState } from 'react';
-import { 
-    View, 
-    Text, 
-    TouchableOpacity, 
-    ScrollView, 
-    Image,
-    StatusBar,
-    SafeAreaView
-} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import React, { useState } from 'react';
+import {
+    SafeAreaView,
+    ScrollView,
+    StatusBar,
+    TouchableOpacity,
+    View
+} from 'react-native';
 import LeavesIcon from '../../../assets/leaves.svg';
 import AppText from '../../../components/AppText';
 
@@ -128,30 +126,36 @@ const Absence = () => {
     );
 
     return (
-        <View style={{ flex: 1, backgroundColor: 'white' }}>
-            <SafeAreaView style={{ flex: 1 }}>
+        <View style={{ flex: 1 }}>
+            <SafeAreaView style={{ flex: 1, backgroundColor: '#FDF4E5' }}>
                 <StatusBar barStyle="dark-content" />
                 
-                {/* Header - Fixed at top */}
-                <View style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    paddingHorizontal: 16,
-                    paddingVertical: 12,
-                    backgroundColor: '#FDF4E5',
-                    zIndex: 1
-                }}>
-                    <TouchableOpacity onPress={handleGoBack} style={{ padding: 8 }}>
-                        <Ionicons name="chevron-back" size={24} color="#333" />
-                    </TouchableOpacity>
-                </View>
-                
-                <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+                <ScrollView 
+                    style={{ flex: 1 }} 
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={{ flexGrow: 1 }}
+                >
                     <LinearGradient
                         colors={['#FDF4E5', '#F8DFB6']}
-                        style={{ borderBottomLeftRadius: 30, borderBottomRightRadius: 30 }}
+                        style={{ 
+                            borderBottomLeftRadius: 30, 
+                            borderBottomRightRadius: 30,
+                           
+                        }}
                     >
+                        {/* Header - Inside gradient */}
+                        <View style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            paddingHorizontal: 16,
+                            paddingVertical: 12,
+                            zIndex: 1
+                        }}>
+                            <TouchableOpacity onPress={handleGoBack} style={{ padding: 8 }}>
+                                <Ionicons name="chevron-back" size={24} color="#333" />
+                            </TouchableOpacity>
+                        </View>
 
                         {/* Top Section with Illustration */}
                         <View style={{
@@ -192,12 +196,12 @@ const Absence = () => {
                                 marginBottom: 10,
                                 marginTop: 10
                             }}>
-                                Phụ huynh tạo đơn để Wisers bắt hụt hẳng nhé.
+                                Phụ huynh tạo đơn để Wisers bớt hụt hẳng nhé.
                             </AppText>
                         </View>
 
                         {/* Create Request Button */}
-                        <View style={{ paddingHorizontal: 40, paddingBottom: 60 }}>
+                        <View style={{ paddingHorizontal: 40, paddingBottom: 50 }}>
                             <TouchableOpacity
                                 onPress={handleCreateRequest}
                                 style={{
@@ -220,11 +224,10 @@ const Absence = () => {
                     
                     {/* Second Section - Request List */}
                     <View style={{ 
-                        borderTopLeftRadius: 30,
-                        borderTopRightRadius: 30,
-                        
+                        flex: 1,
+                        paddingTop: 30
                     }}>
-                        <View style={{ paddingTop: 30 }}>
+                        <View>
                             {/* List Header */}
                             <View style={{
                                 flexDirection: 'column',
