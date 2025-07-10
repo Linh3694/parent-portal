@@ -173,35 +173,96 @@ const StudentScreen = () => {
 
     const fetchClassAndTimetable = async (classId: string) => {
         try {
+            // Kiểm tra classId hợp lệ
+            if (!classId || classId.trim() === '') {
+                console.warn('⚠️ ClassId is empty or invalid');
+                return;
+            }
 
-            // Lấy thông tin lớp
-            const classRes = await api.get(`/classes/${classId}`);
-            setClassInfo(classRes.data);
+            console.log('🔍 Fetching data for classId:', classId);
+            console.log('🔍 API Base URL:', API_URL);
+            
+            let classData = null;
+
+            // Lấy thông tin lớp với populate để có đầy đủ thông tin gradeLevel và school
+            try {
+                const classRes = await api.get(`/classes/${classId}?populate=gradeLevel.school`);
+                classData = classRes.data;
+                setClassInfo(classData);
+                console.log('✅ Class info fetched:', classData?.className, classData?.schoolYear);
+            } catch (classError: any) {
+                console.error('❌ Error fetching class info:', classError.response?.status, classError.response?.data);
+                return;
+            }
 
             // Lấy thời khóa biểu
-            const timetableRes = await api.get(`/timetables/class/${classId}`);
-            setTimetable(timetableRes.data);
-
-            // Lấy period definitions từ schoolYear của lớp
-            if (classRes.data.schoolYear) {
-                // Kiểm tra và lấy ID của schoolYear
-                const schoolYearId = typeof classRes.data.schoolYear === 'object'
-                    ? classRes.data.schoolYear._id
-                    : classRes.data.schoolYear;
-
-                if (schoolYearId) {
-                    const periodDefsRes = await api.get(`/timetables/period-definitions/${schoolYearId}`);
-                    setPeriodDefinitions(periodDefsRes.data.data);
-                }
+            try {
+                const timetableRes = await api.get(`/timetables/class/${classId}`);
+                console.log('✅ Timetable fetched:', timetableRes.data?.length, 'entries');
+                setTimetable(timetableRes.data || []);
+            } catch (timetableError: any) {
+                console.error('❌ Error fetching timetable:', timetableError.response?.status, timetableError.response?.data);
+                setTimetable([]);
             }
-        } catch (error: any) { // Thêm type any để fix linter error
+
+            // Lấy period definitions từ schoolYear của lớp - SỬA: sử dụng classData trực tiếp
+            if (classData && classData.schoolYear) {
+                try {
+                    // Kiểm tra và lấy ID của schoolYear
+                    const schoolYearId = typeof classData.schoolYear === 'object'
+                        ? classData.schoolYear._id
+                        : classData.schoolYear;
+
+                    // Lấy school ID từ gradeLevel.school
+                    const schoolId = classData.gradeLevel?.school?._id 
+                        || classData.gradeLevel?.school 
+                        || null;
+
+                    console.log('🔍 Fetching period definitions for:', { schoolYearId, schoolId });
+
+                    if (schoolYearId) {
+                        // Gọi API với schoolId param như web version
+                        const periodDefsUrl = schoolId 
+                            ? `/timetables/period-definitions/${schoolYearId}?schoolId=${schoolId}`
+                            : `/timetables/period-definitions/${schoolYearId}`;
+                        
+                        const periodDefsRes = await api.get(periodDefsUrl);
+                        const periods = periodDefsRes.data.data || periodDefsRes.data || [];
+                        console.log('✅ Period definitions fetched:', periods.length, 'periods');
+                        setPeriodDefinitions(periods);
+                    }
+                } catch (periodsError: any) {
+                    console.error('❌ Error fetching period definitions:', periodsError.response?.status, periodsError.response?.data);
+                }
+            } else {
+                console.warn('⚠️ No schoolYear found in class data');
+            }
+        } catch (error: any) {
+            console.error('❌ General error in fetchClassAndTimetable:', error);
         }
     };
 
     useEffect(() => {
-        if (students.length > 0 && students[activeIndex]?.class?.length > 0) {
-            const classId = students[activeIndex].class[0]; // lấy class đầu tiên
-            fetchClassAndTimetable(classId);
+        if (students.length > 0 && activeIndex < students.length) {
+            const activeStudent = students[activeIndex];
+
+            
+            // Kiểm tra các cách lấy classId khác nhau
+            let classId = null;
+            
+            if (activeStudent?.class && Array.isArray(activeStudent.class) && activeStudent.class.length > 0) {
+                classId = activeStudent.class[0];
+            } else if (activeStudent?.classId) {
+                classId = activeStudent.classId;
+            } else if (activeStudent?.enrollment && Array.isArray(activeStudent.enrollment) && activeStudent.enrollment.length > 0) {
+                classId = activeStudent.enrollment[0].class;
+            }
+            
+            if (classId) {
+                fetchClassAndTimetable(classId);
+            } else {
+                console.warn('⚠️ No classId found for student:', activeStudent?.name || activeStudent?.fullname);
+            }
         }
     }, [activeIndex, students]);
 
@@ -223,12 +284,26 @@ const StudentScreen = () => {
     const specialLessons = expandSpecialLessons(getSpecialLessonsForGradeLevel(gradeLevel || 1));
 
     // Sử dụng period definitions từ API thay vì hardcode
-    const periods = periodDefinitions.map(pd => ({
-        periodNumber: pd.periodNumber,
-        startTime: pd.startTime,
-        endTime: pd.endTime,
-        label: pd.label
-    }));
+    const periods = periodDefinitions.length > 0 
+        ? periodDefinitions.map(pd => ({
+            periodNumber: pd.periodNumber,
+            startTime: pd.startTime,
+            endTime: pd.endTime,
+            label: pd.label
+        }))
+        : [
+            // Fallback periods nếu không load được từ API
+            { periodNumber: 1, startTime: "07:00", endTime: "07:45", label: "Tiết 1" },
+            { periodNumber: 2, startTime: "07:50", endTime: "08:35", label: "Tiết 2" },
+            { periodNumber: 3, startTime: "08:40", endTime: "09:25", label: "Tiết 3" },
+            { periodNumber: 4, startTime: "09:40", endTime: "10:25", label: "Tiết 4" },
+            { periodNumber: 5, startTime: "10:30", endTime: "11:15", label: "Tiết 5" },
+            { periodNumber: 6, startTime: "13:00", endTime: "13:45", label: "Tiết 6" },
+            { periodNumber: 7, startTime: "13:50", endTime: "14:35", label: "Tiết 7" },
+            { periodNumber: 8, startTime: "14:40", endTime: "15:25", label: "Tiết 8" },
+            { periodNumber: 9, startTime: "15:40", endTime: "16:25", label: "Tiết 9" },
+            { periodNumber: 10, startTime: "16:30", endTime: "17:15", label: "Tiết 10" }
+        ];
 
     let fullTimetable: any[] = [];
     for (const day of DAYS_OF_WEEK) {
@@ -238,15 +313,20 @@ const StudentScreen = () => {
             timetable,
             day
         );
+        
         // 2. Merge với specialLessons
-        fullTimetable = [
-            ...fullTimetable,
-            ...mergePeriodsAndSpecialLessons(periodsWithData, specialLessons, day)
-        ];
+        const mergedLessons = mergePeriodsAndSpecialLessons(periodsWithData, specialLessons, day);
+        fullTimetable = [...fullTimetable, ...mergedLessons];
     }
+    
+    // Tìm lesson hiện tại từ fullTimetable TRƯỚC khi thêm breaks
+    const currentLessonWithBreaks = getCurrentLesson(fullTimetable);
+    
+    // Nếu không tìm thấy lesson thực sự, mới thêm breaks để kiểm tra giờ nghỉ
+    const timetableWithBreaks = currentLessonWithBreaks ? fullTimetable : insertBreaksToTimetable(fullTimetable);
+    const finalCurrentLesson = currentLessonWithBreaks || getCurrentLesson(timetableWithBreaks);
+    
 
-    const timetableWithBreaks = insertBreaksToTimetable(fullTimetable);
-    const currentLessonWithBreaks = getCurrentLesson(timetableWithBreaks);
 
 
     const dates = communicationBooks.map(cb => ({
@@ -336,35 +416,50 @@ const StudentScreen = () => {
                         <View className="flex-row items-center bg-white rounded-2xl px-4 py-1 mr-1.5">
                             <View className="w-2 h-2 rounded-full bg-green-500 mr-2" />
                             <AppText style={{ fontFamily: 'Medium' }} className="text-[#3F4246] font-semibold text-sm">
-                                {currentLessonWithBreaks ? 'Đang học' : 'Không có tiết học'}
+                                {finalCurrentLesson ? 'Đang học' : 'Không có tiết học'}
                             </AppText>
                         </View>
                     </View>
-                    {currentLessonWithBreaks ? (
+                    {finalCurrentLesson ? (
                         <View className="h-full flex flex-col items-start justify-end">
-                            {currentLessonWithBreaks.periodNumber && (
+                            {finalCurrentLesson.periodNumber && (
                                 <AppText className="text-base text-gray-500 mb-1">
-                                    {`Tiết ${currentLessonWithBreaks.periodNumber}`}
+                                    {`Tiết ${finalCurrentLesson.periodNumber}`}
                                 </AppText>
                             )}
                             <AppText className="text-2xl font-bold text-[#E4572E] mb-1">
-                                {currentLessonWithBreaks.subject?.name
-                                    || currentLessonWithBreaks.name
-                                    || currentLessonWithBreaks.label
-                                    || ''}
+                                {finalCurrentLesson.subject?.name
+                                    || finalCurrentLesson.name
+                                    || finalCurrentLesson.label
+                                    || 'Tiết học'}
                             </AppText>
-                            {currentLessonWithBreaks.teachers && currentLessonWithBreaks.teachers.length > 0 && (
+                            {finalCurrentLesson.teachers && finalCurrentLesson.teachers.length > 0 && (
                                 <>
                                     <AppText className="text-gray-500 text-base mb-2">
-                                        {currentLessonWithBreaks.teachers.map((t: any) => t.fullname).join(' / ')}
+                                        {finalCurrentLesson.teachers.map((t: any) => t.fullname).join(' / ')}
                                     </AppText>
                                     <View className="flex-row mt-1">
-                                        {currentLessonWithBreaks.teachers.map((t: any, idx: number) => {
-                                            let avatar = t.avatarUrl
-                                                ? `${BASE_URL}${encodeURI(t.avatarUrl)}`
-                                                : t.user?.avatarUrl
-                                                    ? `${BASE_URL}${encodeURI(t.user.avatarUrl)}`
-                                                    : `https://ui-avatars.com/api/?name=${encodeURIComponent(t.fullname || 'GV')}&background=E0E0E0&color=757575&size=128`;
+                                        {finalCurrentLesson.teachers.map((t: any, idx: number) => {
+                                            let avatar: string;
+                                            
+                                            // Xử lý avatarUrl từ teacher trực tiếp
+                                            if (t.avatarUrl && t.avatarUrl.trim()) {
+                                                avatar = t.avatarUrl.startsWith('http') 
+                                                    ? t.avatarUrl 
+                                                    : `${BASE_URL}${t.avatarUrl.startsWith('/') ? '' : '/uploads/Avatar/'}${encodeURI(t.avatarUrl)}`;
+                                            }
+                                            // Xử lý avatarUrl từ user
+                                            else if (t.user?.avatarUrl && t.user.avatarUrl.trim()) {
+                                                avatar = t.user.avatarUrl.startsWith('http') 
+                                                    ? t.user.avatarUrl 
+                                                    : `${BASE_URL}${t.user.avatarUrl.startsWith('/') ? '' : '/uploads/Avatar/'}${encodeURI(t.user.avatarUrl)}`;
+                                            }
+                                            // Fallback to generated avatar
+                                            else {
+                                                avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(t.fullname || 'GV')}&background=E0E0E0&color=757575&size=128`;
+                                            }
+                                            
+                                            
                                             return (
                                                 <Image
                                                     key={idx}
@@ -376,10 +471,30 @@ const StudentScreen = () => {
                                     </View>
                                 </>
                             )}
+                            {/* Debug info - có thể xóa sau */}
+                            {__DEV__ && (
+                                <AppText className="text-xs text-gray-400 mt-2">
+                                    {finalCurrentLesson.timeSlot?.startTime || finalCurrentLesson.startTime} - {finalCurrentLesson.timeSlot?.endTime || finalCurrentLesson.endTime}
+                                </AppText>
+                            )}
                         </View>
                     ) : (
                         <View className="h-full flex flex-col items-start justify-end">
                             <AppText className="text-lg text-gray-400">Hiện tại không có tiết học nào</AppText>
+                            {/* Debug info - có thể xóa sau */}
+                            {__DEV__ && (
+                                <>
+                                    <AppText className="text-xs text-gray-400 mt-2">
+                                        Timetable: {timetable.length} tiết
+                                    </AppText>
+                                    <AppText className="text-xs text-gray-400">
+                                        Periods: {periodDefinitions.length} định nghĩa
+                                    </AppText>
+                                    <AppText className="text-xs text-gray-400">
+                                        Class: {classInfo?.name || 'Chưa có'}
+                                    </AppText>
+                                </>
+                            )}
                         </View>
                     )}
                 </View>
@@ -534,25 +649,62 @@ function insertBreaksToTimetable(timetable: any[]): any[] {
 }
 
 const getCurrentLesson = (timetable: any[]) => {
-    if (!timetable || timetable.length === 0) return null;
+    if (!timetable || timetable.length === 0) {
+        return null;
+    }
 
     const now = new Date();
-    const currentDay = DAYS_OF_WEEK[now.getDay() - 1]; // -1 vì getDay() trả về 0-6, với 0 là Chủ nhật
-    const currentTime = now.toLocaleTimeString('en-US', { hour12: false });
+    const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+    
+    // Chỉ xử lý ngày học (Monday-Friday)
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+        return null; // Cuối tuần không có tiết học
+    }
+    
+    const currentDay = DAYS_OF_WEEK[dayOfWeek - 1]; // Convert to Monday=0, Tuesday=1, etc.
+    const currentTime = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
 
-    return timetable.find(lesson => {
+    const currentLesson = timetable.find(lesson => {
         const day = lesson.timeSlot?.dayOfWeek || lesson.dayOfWeek;
         const startTime = lesson.timeSlot?.startTime || lesson.startTime;
         const endTime = lesson.timeSlot?.endTime || lesson.endTime;
 
-        return day === currentDay &&
-            startTime <= currentTime &&
-            currentTime <= endTime;
+        const isRightDay = day === currentDay;
+        const isInTime = startTime && endTime && startTime <= currentTime && currentTime <= endTime;
+
+        return isRightDay && isInTime;
     });
+
+    return currentLesson;
 };
 
 function mergeTimetableData(periods: Period[], timetable: any[], dayOfWeek: string) {
-    return periods.map(period => {
+    if (__DEV__) {
+        console.log('🔍 mergeTimetableData called:', {
+            dayOfWeek,
+            periodsCount: periods.length,
+            timetableCount: timetable.length
+        });
+        
+        if (periods.length > 0) {
+            console.log('📅 Sample period:', {
+                periodNumber: periods[0].periodNumber,
+                startTime: periods[0].startTime,
+                endTime: periods[0].endTime
+            });
+        }
+        
+        if (timetable.length > 0) {
+            console.log('📅 Sample timetable entry:', {
+                dayOfWeek: timetable[0].timeSlot?.dayOfWeek || timetable[0].dayOfWeek,
+                startTime: timetable[0].timeSlot?.startTime || timetable[0].startTime,
+                endTime: timetable[0].timeSlot?.endTime || timetable[0].endTime,
+                subject: timetable[0].subject?.name
+            });
+        }
+    }
+    
+    const merged = periods.map(period => {
         // Tìm entry thực tế trong timetable ứng với period này
         const realLesson = timetable.find(
             t =>
@@ -560,7 +712,17 @@ function mergeTimetableData(periods: Period[], timetable: any[], dayOfWeek: stri
                 (t.timeSlot?.startTime || t.startTime) === period.startTime &&
                 (t.timeSlot?.endTime || t.endTime) === period.endTime
         );
+        
         if (realLesson) {
+            if (__DEV__) {
+                console.log('✅ Found lesson match:', {
+                    dayOfWeek,
+                    periodNumber: period.periodNumber,
+                    subject: realLesson.subject?.name,
+                    teachers: realLesson.teachers?.map((t: any) => t.fullname).join(', ')
+                });
+            }
+            
             return {
                 ...period,
                 subject: realLesson.subject, // subject là object { name, ... }
@@ -570,6 +732,18 @@ function mergeTimetableData(periods: Period[], timetable: any[], dayOfWeek: stri
         }
         return period;
     });
+    
+    if (__DEV__) {
+        const lessonsFound = merged.filter(m => (m as any).subject).length;
+        console.log('📊 Merge result:', {
+            dayOfWeek,
+            totalPeriods: periods.length,
+            lessonsFound,
+            emptySlots: periods.length - lessonsFound
+        });
+    }
+    
+    return merged;
 }
 
 // Thêm hàm tính phần trăm tiến trình thời gian trong ngày
