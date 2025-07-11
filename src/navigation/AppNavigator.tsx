@@ -1,5 +1,4 @@
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import OnboardingScreen from '../screens/OnboardingScreen';
 import WelcomeScreen from '../screens/WelcomeScreen';
@@ -23,27 +22,25 @@ const Stack = createNativeStackNavigator();
 
 const AppNavigator = () => {
     return (
-        <NavigationContainer>
-            <Stack.Navigator screenOptions={{ headerShown: false }}>
-                <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-                <Stack.Screen name="Welcome" component={WelcomeScreen} />
-                <Stack.Screen name="SignIn" component={SignInScreen} />
-                <Stack.Screen name="Home" component={MainTabNavigator} />
-                <Stack.Screen name="MenuScreen" component={MenuScreen} />
-                {/* Các route cho menu con */}
-                <Stack.Screen name="StudentInfo" component={StudentInfo} />
-                <Stack.Screen name="OnlineAccount" component={OnlineAccount} />
-                <Stack.Screen name="Timetable" component={Timetable} />
-                <Stack.Screen name="ContactBook" component={ContactBook} />
-                <Stack.Screen name="Attendance" component={Attendance} />
-                <Stack.Screen name="StudyReport" component={StudyReport} />
-                <Stack.Screen name="Absence" component={Absence} />
-                <Stack.Screen name="CreateLeaveRequest" component={CreateLeaveRequest} />
-                <Stack.Screen name="MenuService" component={MenuService} />
-                <Stack.Screen name="Health" component={Health} />
-                <Stack.Screen name="Bus" component={Bus} />
-            </Stack.Navigator>
-        </NavigationContainer>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+            <Stack.Screen name="Welcome" component={WelcomeScreen} />
+            <Stack.Screen name="SignIn" component={SignInScreen} />
+            <Stack.Screen name="Home" component={MainTabNavigator} />
+            <Stack.Screen name="MenuScreen" component={MenuScreen} />
+            {/* Các route cho menu con */}
+            <Stack.Screen name="StudentInfo" component={StudentInfo} />
+            <Stack.Screen name="OnlineAccount" component={OnlineAccount} />
+            <Stack.Screen name="Timetable" component={Timetable} />
+            <Stack.Screen name="ContactBook" component={ContactBook} />
+            <Stack.Screen name="Attendance" component={Attendance} />
+            <Stack.Screen name="StudyReport" component={StudyReport} />
+            <Stack.Screen name="Absence" component={Absence} />
+            <Stack.Screen name="CreateLeaveRequest" component={CreateLeaveRequest} />
+            <Stack.Screen name="MenuService" component={MenuService} />
+            <Stack.Screen name="Health" component={Health} />
+            <Stack.Screen name="Bus" component={Bus} />
+        </Stack.Navigator>
     );
 };
 
