@@ -639,7 +639,8 @@ const CreateLeaveRequest = () => {
                         fontSize: 16,
                         fontWeight: '600',
                         color: '#002855',
-                        marginBottom: 20,
+                        marginTop: 20,
+                        marginBottom: 10,
                     }}>
                         Con nghỉ học buổi nào đó
                     </AppText>

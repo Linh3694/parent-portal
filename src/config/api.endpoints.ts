@@ -16,4 +16,9 @@ export const API_ENDPOINTS = {
         GET_LIST: '/class/list',
         GET_DETAIL: '/class/:id',
     },
+    ATTENDANCE: {
+        GET_BY_DATE: '/attendance',
+        GET_BY_CLASS_DATE: '/attendance/timetable-slots/:classId/:date',
+        GET_TIME_ATTENDANCE: '/attendance/time-attendance-by-date',
+    },
 }; 

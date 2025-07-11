@@ -1,22 +1,54 @@
-import React, { useState } from 'react';
-import { View, TouchableOpacity, Text } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AppText from '../AppText';
+import { format, isSameDay } from 'date-fns';
+import { vi } from 'date-fns/locale';
 
 interface CalendarProps {
-    selectedDates: Date[];
-    onDatesChange: (dates: Date[]) => void;
+    // Chế độ chọn một ngày
+    selectedDate?: Date;
+    onDateChange?: (date: Date) => void;
+    
+    // Chế độ chọn nhiều ngày
+    selectedDates?: Date[];
+    onDatesChange?: (dates: Date[]) => void;
+    
+    // Các props chung
     multiSelect?: boolean;
     rangeSelect?: boolean;
+    highlightedDates?: Date[];
 }
 
 const Calendar: React.FC<CalendarProps> = ({ 
-    selectedDates, 
-    onDatesChange, 
+    selectedDate,
+    onDateChange,
+    selectedDates = [],
+    onDatesChange,
     multiSelect = true,
-    rangeSelect = false
+    rangeSelect = false,
+    highlightedDates = []
 }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
+    
+    // Xác định chế độ hoạt động dựa trên props được truyền vào
+    const isSingleSelectMode = !!onDateChange;
+    const isMultiSelectMode = !!onDatesChange;
+    
+    // Đảm bảo selectedDates luôn là một mảng hợp lệ
+    const effectiveSelectedDates = isSingleSelectMode && selectedDate 
+        ? [selectedDate] 
+        : selectedDates || [];
+
+    useEffect(() => {
+        // Nếu có selectedDate, đặt currentDate về tháng của selectedDate
+        if (selectedDate) {
+            setCurrentDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
+        } else if (selectedDates && selectedDates.length > 0) {
+            // Nếu có selectedDates, đặt currentDate về tháng của ngày đầu tiên được chọn
+            setCurrentDate(new Date(selectedDates[0].getFullYear(), selectedDates[0].getMonth(), 1));
+        }
+    }, []);
 
     const months = [
         'Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6',
@@ -66,12 +98,17 @@ const Calendar: React.FC<CalendarProps> = ({
 
     const isDateSelected = (date: Date | null) => {
         if (!date) return false;
-        return selectedDates.some(selectedDate => 
-            selectedDate.toDateString() === date.toDateString()
+        return effectiveSelectedDates.some(selectedDate => 
+            isSameDay(selectedDate, date)
         );
     };
 
-
+    const isDateHighlighted = (date: Date | null) => {
+        if (!date || !highlightedDates || highlightedDates.length === 0) return false;
+        return highlightedDates.some(highlightedDate => 
+            isSameDay(highlightedDate, date)
+        );
+    };
 
     const isCurrentMonth = (date: Date | null) => {
         if (!date) return false;
@@ -88,21 +125,30 @@ const Calendar: React.FC<CalendarProps> = ({
             return;
         }
         
-        if (multiSelect) {
-            const isSelected = isDateSelected(date);
-            if (isSelected) {
-                // Remove date from selection
-                const newDates = selectedDates.filter(selectedDate => 
-                    selectedDate.toDateString() !== date.toDateString()
-                );
-                onDatesChange(newDates);
+        // Xử lý cho chế độ chọn một ngày
+        if (isSingleSelectMode && onDateChange) {
+            onDateChange(date);
+            return;
+        }
+        
+        // Xử lý cho chế độ chọn nhiều ngày
+        if (isMultiSelectMode && onDatesChange) {
+            if (multiSelect) {
+                const isSelected = isDateSelected(date);
+                if (isSelected) {
+                    // Remove date from selection
+                    const newDates = effectiveSelectedDates.filter(selectedDate => 
+                        !isSameDay(selectedDate, date)
+                    );
+                    onDatesChange(newDates);
+                } else {
+                    // Add date to selection
+                    onDatesChange([...effectiveSelectedDates, date]);
+                }
             } else {
-                // Add date to selection
-                onDatesChange([...selectedDates, date]);
+                // Single select mode
+                onDatesChange([date]);
             }
-        } else {
-            // Single select
-            onDatesChange([date]);
         }
     };
 
@@ -119,55 +165,33 @@ const Calendar: React.FC<CalendarProps> = ({
     const days = getDaysInMonth(currentDate);
 
     return (
-        <View style={{
-            borderRadius: 12,
-            borderWidth: 2,
-            borderColor: '#DDDDDD',
-            padding: 5,
-            elevation: 3
-        }}>
+        <View style={styles.container}>
             {/* Header with month navigation */}
-            <View style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: 10
-            }}>
+            <View style={styles.header}>
                 <TouchableOpacity 
                     onPress={() => navigateMonth('prev')}
-                    style={{ padding: 5 }}
+                    style={styles.navButton}
                 >
                     <Ionicons name="chevron-back" size={20} color="#666" />
                 </TouchableOpacity>
                 
-                <AppText style={{
-                    fontSize: 14,
-                    fontWeight: '600',
-                    color: '#333'
-                }}>
+                <AppText style={styles.monthTitle}>
                     {months[currentDate.getMonth()]}/{currentDate.getFullYear()}
                 </AppText>
                 
                 <TouchableOpacity 
                     onPress={() => navigateMonth('next')}
-                    style={{ padding: 5 }}
+                    style={styles.navButton}
                 >
                     <Ionicons name="chevron-forward" size={20} color="#666" />
                 </TouchableOpacity>
             </View>
 
             {/* Week days header */}
-            <View style={{
-                flexDirection: 'row',
-                marginBottom: 8
-            }}>
-                {weekDays.map((day, index) => (
-                    <View key={day} style={{ flex: 1, alignItems: 'center' }}>
-                        <AppText style={{
-                            fontSize: 11,
-                            fontWeight: '500',
-                            color: '#666'
-                        }}>
+            <View style={styles.weekDaysContainer}>
+                {weekDays.map((day) => (
+                    <View key={day} style={styles.weekDay}>
+                        <AppText style={styles.weekDayText}>
                             {day}
                         </AppText>
                     </View>
@@ -175,40 +199,31 @@ const Calendar: React.FC<CalendarProps> = ({
             </View>
 
             {/* Calendar grid */}
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+            <View style={styles.calendarGrid}>
                 {days.map((date, index) => {
                     const isSelected = isDateSelected(date);
-                    const isToday = date && date.toDateString() === new Date().toDateString();
+                    const isHighlighted = isDateHighlighted(date);
+                    const isToday = date && isSameDay(date, new Date());
                     const isCurrentMonthDate = isCurrentMonth(date);
                     
                     return (
-                        <View key={index} style={{ width: '14.28%', aspectRatio: 2 }}>
+                        <View key={index} style={styles.dayCell}>
                             <TouchableOpacity
-                                style={{
-                                    flex: 1,
-                                    justifyContent: 'center',
-                                    alignItems: 'center',
-                                    marginVertical: 0,
-                                    marginHorizontal: 1,
-                                }}
+                                style={styles.dayButton}
                                 onPress={() => handleDatePress(date)}
                             >
-                                <View style={{
-                                    width: 28,
-                                    height: 28,
-                                    borderRadius: 14,
-                                    backgroundColor: isSelected ? '#F05023' : 'transparent',
-                                    justifyContent: 'center',
-                                    alignItems: 'center'
-                                }}>
-                                    <AppText style={{
-                                        fontSize: 13,
-                                        fontWeight: isSelected ? '700' : '400',
-                                        color: isSelected ? 'white' : 
-                                               isToday ? '#F05023' : 
-                                               isCurrentMonthDate ? '#333' : '#999',
-                                        opacity: isCurrentMonthDate ? 1 : 0.5
-                                    }}>
+                                <View style={[
+                                    styles.dayCircle,
+                                    isSelected && styles.selectedDay,
+                                    isHighlighted && !isSelected && styles.highlightedDay
+                                ]}>
+                                    <AppText style={[
+                                        styles.dayText,
+                                        isSelected && styles.selectedDayText,
+                                        isHighlighted && !isSelected && styles.highlightedDayText,
+                                        isToday && !isSelected && styles.todayText,
+                                        !isCurrentMonthDate && styles.otherMonthText
+                                    ]}>
                                         {date.getDate()}
                                     </AppText>
                                 </View>
@@ -220,5 +235,90 @@ const Calendar: React.FC<CalendarProps> = ({
         </View>
     );
 };
+
+const styles = StyleSheet.create({
+    container: {
+        borderRadius: 12,
+        borderWidth: 2,
+        borderColor: '#DDDDDD',
+        padding: 5,
+        elevation: 3,
+    },
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 10
+    },
+    navButton: {
+        padding: 5
+    },
+    monthTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#333'
+    },
+    weekDaysContainer: {
+        flexDirection: 'row',
+        marginBottom: 8
+    },
+    weekDay: {
+        flex: 1,
+        alignItems: 'center'
+    },
+    weekDayText: {
+        fontSize: 11,
+        fontWeight: '500',
+        color: '#666'
+    },
+    calendarGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap'
+    },
+    dayCell: {
+        width: '14.28%',
+        aspectRatio: 2
+    },
+    dayButton: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginVertical: 0,
+        marginHorizontal: 1
+    },
+    dayCircle: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        backgroundColor: 'transparent',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    selectedDay: {
+        backgroundColor: '#F05023'
+    },
+    highlightedDay: {
+        backgroundColor: '#FFD54F'
+    },
+    dayText: {
+        fontSize: 13,
+        fontWeight: '400',
+        color: '#333'
+    },
+    selectedDayText: {
+        color: 'white',
+        fontWeight: '700'
+    },
+    highlightedDayText: {
+        fontWeight: '700'
+    },
+    todayText: {
+        color: '#F05023'
+    },
+    otherMonthText: {
+        color: '#999',
+        opacity: 0.5
+    }
+});
 
 export default Calendar; 
