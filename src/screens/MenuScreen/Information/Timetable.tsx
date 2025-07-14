@@ -227,34 +227,20 @@ const TimetableScreen = () => {
 
         try {
             setLoading(true);
-            console.log('🔍 Fetching timetable data for classId:', classId);
-            console.log('🔍 Active student:', activeStudent);
-
+           
             // Fetch class info
             const classRes = await api.get(`/classes/${classId}?populate=gradeLevel.school`);
             const classData = classRes.data;
-            console.log('📚 Class data received:', classData);
             setClassInfo(classData);
-
-            // Fetch timetable
-            console.log('🔍 Fetching timetable with URL:', `/timetables/class/${classId}`);
-            const timetableRes = await api.get(`/timetables/class/${classId}`);
-            console.log('📅 Full timetable response:', timetableRes);
-            
-            let timetableData = timetableRes.data || [];
-            console.log('📅 Timetable data received:', timetableData);
-            console.log('📅 Timetable count:', timetableData.length);
-            
+            const timetableRes = await api.get(`/timetables/class/${classId}`);     
+            let timetableData = timetableRes.data || [];     
             // Nếu không có dữ liệu, thử API khác
             if (timetableData.length === 0) {
-                console.log('🔄 Trying alternative timetable APIs...');
                 
                 // Try API with query parameter
                 try {
                     const altRes1 = await api.get(`/timetables?classId=${classId}`);
-                    console.log('📅 Alternative API 1 response:', altRes1);
                     timetableData = altRes1.data?.data || altRes1.data || [];
-                    console.log('📅 Alternative timetable data 1:', timetableData);
                 } catch (altError) {
                     console.log('❌ Alternative API 1 failed:', (altError as Error).message);
                 }

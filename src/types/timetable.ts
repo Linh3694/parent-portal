@@ -3,16 +3,11 @@ export interface Period {
     startTime: string;
     endTime: string;
     label?: string;
+    type?: 'regular' | 'morning' | 'lunch' | 'nap' | 'snack' | 'dismissal';
     dayOfWeek?: string;
 }
 
-export interface SpecialLesson {
-    name: string;
-    dayOfWeek: string;
-    startTime: string;
-    endTime: string;
-    description?: string;
-}
+
 
 export interface Teacher {
     id?: string;
@@ -50,6 +45,7 @@ export interface TimetableEntry {
     label?: string;
     name?: string;
     description?: string;
+    type?: 'regular' | 'morning' | 'lunch' | 'nap' | 'snack' | 'dismissal';
 }
 
 export interface ClassInfo {
@@ -81,4 +77,7 @@ export interface PeriodDefinition {
     startTime: string;
     endTime: string;
     label?: string;
+    type?: 'regular' | 'morning' | 'lunch' | 'nap' | 'snack' | 'dismissal';
+    school?: string;
+    schoolYear?: string;
 } 

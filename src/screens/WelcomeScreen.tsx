@@ -60,7 +60,7 @@ const WelcomeScreen = () => {
                             Chào mừng quý Phụ huynh đến với
                         </Text>
                         <Text className="text-5xl font-extrabold text-[#F05023] text-center mb-5 ">
-                            WISer Portal
+                            WISer Parents
                         </Text>
                         <Text className="text-sm text-[#333] mb-5  text-center">
                             Đồng hành cùng thế hệ tương lai

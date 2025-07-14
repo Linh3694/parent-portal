@@ -18,7 +18,7 @@ const MENU_GROUPS = [
         title: 'Thông tin cơ bản',
         items: [
             { label: 'Thông tin học sinh', screen: 'StudentInfo', icon: 'StudentInfo' },
-            { label: 'Tài khoản online', screen: 'OnlineAccount', icon: 'OnlineAccount' },
+            // { label: 'Tài khoản online', screen: 'OnlineAccount', icon: 'OnlineAccount' },
             { label: 'Thời khóa biểu', screen: 'Timetable', icon: 'Timetable' },
         ],
     },
