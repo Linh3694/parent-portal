@@ -1,343 +1,550 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, ActivityIndicator, TouchableOpacity, Image, SafeAreaView } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+    View,
+    Text,
+    TouchableOpacity,
+    ScrollView,
+    Image,
+    SafeAreaView,
+    RefreshControl,
+    Alert
+} from 'react-native';
+import { NavigationProp } from '@react-navigation/native';
+import { RootStackParamList } from '../../../navigation/AppNavigator';
+import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import Calendar from '../../../components/ui/Calendar';
-import { AttendanceItem } from '../../../components/ui/AttendanceItem';
-import { useAttendance } from '../../../hooks/useAttendance';
-import { AttendanceRecord, AttendanceStatus, AttendanceStatusColors } from '../../../types/attendance';
-import { useNavigation } from '@react-navigation/native';
+
 import AppText from '../../../components/AppText';
-import api from '../../../config/api.config';
+import Calendar from '../../../components/ui/Calendar';
+import api, { API_URL, BASE_URL } from '../../../config/api.config';
+import { 
+    Attendance,
+    LeaveRequest,
+    TimeAttendance
+} from '../../../types';
+import { PeriodDefinition, ProcessedPeriod } from '../../../types/period';
+import { useStudentSelector } from '../../../hooks/useStudentSelector';
+import StudentSelector from '../../../components/StudentSelector';
+import {
+    calculateAttendanceRate,
+    createAttendanceSummary,
+    formatTime,
+    getStatusText,
+    getStatusColor,
+    hasLeaveRequestForDate,
+    formatLeaveReason,
+    formatLeaveType,
+    sortAttendancesByPeriod,
+    getTimeAttendanceInfoForStudent,
+    createAttendanceItems,
+    getAttendancePeriodLabel
+} from '../../../utils/attendanceHelpers';
+import { processPeriodDefinitions } from '../../../utils/periodHelpers';
 
-interface Student {
-  _id: string;
-  name: string;
-  studentCode: string;
-  avatarUrl?: string;
-  class?: any;
-  classId?: string;
-  enrollment?: any[];
-}
+// Component nút back
+const BackButton = ({ onGoBack }: { onGoBack: () => void }) => (
+    <TouchableOpacity 
+        onPress={onGoBack}
+        className="p-2"
+    >
+        <Ionicons name="arrow-back" size={24} color="#333" />
+    </TouchableOpacity>
+);
 
-interface Parent {
-  _id: string;
-  students: Student[];
-}
+// Component tiêu đề
+const Title = () => (
+    <Text className="text-xl font-bold text-[#002855] ml-16">Điểm danh</Text>
+);
 
-const getAvatarUrl = (student: Student) => {
-  const studentName = student.name || 'Unknown';
-  if (student.avatarUrl) {
-    return student.avatarUrl;
-  }
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(studentName)}&background=E0E0E0&color=757575&size=128`;
+// Component chọn học sinh tùy chỉnh cho Attendance
+const AttendanceStudentSelector = ({ 
+    students, 
+    activeIndex, 
+    studentAvatars, 
+    onStudentSelect 
+}: {
+    students: any[];
+    activeIndex: number;
+    studentAvatars: any;
+    onStudentSelect: (index: number) => void;
+}) => {
+    return (
+        <View className="flex-row">
+            {students.map((student, index) => {
+                const isSelected = index === activeIndex;
+                return (
+                    <TouchableOpacity
+                        key={student.id || student._id}
+                        onPress={() => onStudentSelect(index)}
+                        className={`ml-2 ${isSelected ? 'ring-2 ring-blue-500' : ''}`}
+                    >
+                        <Image
+                            source={{ 
+                                uri: student.avatarUrl 
+                                    ? `${BASE_URL}${encodeURI(student.avatarUrl)}`
+                                    : student.user?.avatarUrl
+                                        ? `${BASE_URL}${encodeURI(student.user.avatarUrl)}`
+                                        : `https://ui-avatars.com/api/?name=${encodeURIComponent(student.name || student.fullname || 'Unknown')}&background=E0E0E0&color=757575&size=128`
+                            }}
+                            className="w-8 h-8 rounded-full"
+                        />
+                    </TouchableOpacity>
+                );
+            })}
+        </View>
+    );
 };
 
-const Attendance = () => {
-  const navigation = useNavigation();
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [students, setStudents] = useState<Student[]>([]);
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [classInfo, setClassInfo] = useState<any>(null);
-  const [fetchingClass, setFetchingClass] = useState(false);
-  const [classError, setClassError] = useState<string | null>(null);
-
-  // Lấy thông tin phụ huynh và học sinh từ AsyncStorage
-  useEffect(() => {
-    const fetchParentAndStudents = async () => {
-      try {
-        const parentStr = await AsyncStorage.getItem('parent');
-        if (!parentStr) {
-          setLoading(false);
-          return;
-        }
-        const parentObj: Parent = JSON.parse(parentStr);
-        if (parentObj.students && parentObj.students.length > 0) {
-          setStudents(parentObj.students);
-          setSelectedStudent(parentObj.students[0]);
-        }
-      } catch (error) {
-        //
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchParentAndStudents();
-  }, []);
-
-  // Refactor lấy classId và fetch class info mỗi khi selectedStudent thay đổi
-  useEffect(() => {
-    const fetchClassInfo = async () => {
-      setClassInfo(null);
-      setClassError(null);
-      if (!selectedStudent) return;
-      let classId = null;
-      if (selectedStudent.class && Array.isArray(selectedStudent.class) && selectedStudent.class.length > 0) {
-        classId = selectedStudent.class[0];
-      } else if (selectedStudent.classId) {
-        classId = selectedStudent.classId;
-      } else if (selectedStudent.class && typeof selectedStudent.class === 'object' && selectedStudent.class._id) {
-        classId = selectedStudent.class._id;
-      } else if (selectedStudent.enrollment && Array.isArray(selectedStudent.enrollment) && selectedStudent.enrollment.length > 0) {
-        classId = selectedStudent.enrollment[0].class;
-      }
-      if (!classId) {
-        setClassError('Thiếu thông tin lớp học');
-        return;
-      }
-      setFetchingClass(true);
-      try {
-        const res = await api.get(`/classes/${classId}?populate=gradeLevel.school`);
-        setClassInfo(res.data);
-      } catch (err) {
-        setClassError('Thiếu thông tin lớp học');
-      } finally {
-        setFetchingClass(false);
-      }
-    };
-    fetchClassInfo();
-  }, [selectedStudent]);
-
-  // Sử dụng hook useAttendance với thông tin học sinh thực
-  const { loading: attendanceLoading, error, attendanceRecords, timeAttendanceRecords, refreshData } = useAttendance({
-    classId: selectedStudent?.class?._id,
-    date: selectedDate,
-    studentCodes: selectedStudent ? [selectedStudent.studentCode] : [],
-  });
-
-  // Nhóm các bản ghi điểm danh theo ngày
-  const groupedByDate: Record<string, AttendanceRecord[]> = {};
-  attendanceRecords.forEach((record) => {
-    const dateStr = format(new Date(record.date), 'yyyy-MM-dd');
-    if (!groupedByDate[dateStr]) {
-      groupedByDate[dateStr] = [];
-    }
-    groupedByDate[dateStr].push(record);
-  });
-
-  // Lấy danh sách các ngày có điểm danh
-  const datesWithAttendance = Object.keys(groupedByDate).map((dateStr) => new Date(dateStr));
-
-  // Lọc các bản ghi điểm danh cho ngày đã chọn
-  const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
-  const recordsForSelectedDate = groupedByDate[selectedDateStr] || [];
-
-  // Sắp xếp theo số tiết
-  recordsForSelectedDate.sort((a, b) => a.periodNumber - b.periodNumber);
-
-  // Tính toán thống kê trạng thái điểm danh
-  const statusCounts: Record<AttendanceStatus, number> = {
-    present: 0,
-    absent: 0,
-    late: 0,
-    excused: 0,
-  };
-
-  recordsForSelectedDate.forEach((record) => {
-    statusCounts[record.status]++;
-  });
-
-  // Hiển thị trạng thái mặc định nếu không có dữ liệu
-  const showDefaultStatus = recordsForSelectedDate.length === 0;
-
-  // Thay header mới
-  const renderHeader = () => (
-    <View className="flex-row items-center px-4 py-3 border-b border-gray-200">
-      <TouchableOpacity onPress={() => navigation.goBack()} className="pr-4">
-        <Text className="text-2xl">←</Text>
-      </TouchableOpacity>
-      <View className="flex-1 items-center">
-        <AppText style={{ fontSize: 18, fontWeight: 'bold', color: '#3F4246' }}>Điểm danh</AppText>
-      </View>
-      {selectedStudent && (
-        <Image
-          source={{ uri: getAvatarUrl(selectedStudent) }}
-          style={{ width: 36, height: 36, borderRadius: 18, borderWidth: 2, borderColor: '#FFB300' }}
-        />
-      )}
-    </View>
-  );
-
-  // Hiển thị loading khi đang lấy thông tin phụ huynh
-  if (loading) {
-    return (
-      <SafeAreaView className="flex-1 bg-gray-100">
-        {renderHeader()}
-        <View className="p-5 items-center">
-          <ActivityIndicator size="large" color="#E53935" />
-          <Text className="mt-2.5 text-gray-600 text-sm">Đang tải thông tin...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // Hiển thị thông báo nếu không có học sinh
-  if (students.length === 0) {
-    return (
-      <SafeAreaView className="flex-1">
-        {renderHeader()}
-        <View className="p-5 items-center">
-          <Text className="text-gray-600 text-center">Không có học sinh nào trong tài khoản</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  return (
-    <SafeAreaView className="flex-1 bg-gray-100">
-      {renderHeader()}
-      {/* Thông tin học sinh và lớp */}
-      {selectedStudent && (
-        <View className="bg-white rounded-xl mx-4 mt-4 mb-2 p-3 flex-row items-center shadow-sm">
-          <AppText className="flex-1 text-base font-bold text-[#3F4246]">
-            {selectedStudent.name} - {fetchingClass ? 'Đang tải lớp...' : classInfo?.name || 'Chưa có thông tin lớp'}
-          </AppText>
-        </View>
-      )}
-      {classError && (
-        <View className="items-center my-2">
-          <Text className="text-red-500 mb-2">{classError}</Text>
-          <TouchableOpacity className="bg-red-600 px-5 py-2.5 rounded" onPress={() => setSelectedStudent(selectedStudent)}>
-            <Text className="text-white font-bold">Thử lại</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-      <ScrollView className="flex-1 p-4">
-        {students.length > 1 && (
-          <View className="mb-4">
-            <Text className="text-sm font-bold text-gray-800 mb-2">Chọn học sinh:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
-              {students.map((student) => (
-                <TouchableOpacity
-                  key={student._id}
-                  className={`px-3 py-2 rounded-full mr-2 ${
-                    selectedStudent?._id === student._id 
-                      ? 'bg-red-600' 
-                      : 'bg-gray-200'
-                  }`}
-                  onPress={() => setSelectedStudent(student)}
-                >
-                  <Text className={`text-sm ${
-                    selectedStudent?._id === student._id 
-                      ? 'text-white font-bold' 
-                      : 'text-gray-800'
-                  }`}>
-                    {student.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* Hiển thị thông tin học sinh được chọn */}
-        {selectedStudent && (
-          <View className="bg-white p-3 rounded-lg mb-4 shadow-sm">
-            <Text className="text-sm font-bold text-gray-800">
-              {selectedStudent.name} - {selectedStudent.class?.name || 'Chưa có thông tin lớp'}
-            </Text>
-          </View>
-        )}
-
-        <View className="mb-4">
-          <Calendar
+const AttendanceCalendar = React.memo(({ 
+    selectedDate, 
+    onDateSelect 
+}: {
+    selectedDate: Date;
+    onDateSelect: (date: Date) => void;
+}) => (
+    <View className="p-4">
+        <Calendar
             selectedDate={selectedDate}
-            onDateChange={setSelectedDate}
-            highlightedDates={datesWithAttendance}
-            multiSelect={false}
-          />
-        </View>
+            onDateChange={onDateSelect}
+            highlightedDates={[]}
+            customContainerStyle={{
+                borderColor: '#00687F',
+                backgroundColor: '#F4FCFE',
+            }}
+        />
+    </View>
+));
 
-        <View className="mb-4">
-          <Text className="text-base font-bold text-gray-800">
-            {format(selectedDate, 'EEEE, dd/MM/yyyy', { locale: vi })}
-          </Text>
-        </View>
+interface AttendanceScreenProps {
+    navigation: NavigationProp<RootStackParamList>;
+}
 
-        <View className="bg-white rounded-lg p-4 mb-4 shadow-sm">
-          {(showDefaultStatus || statusCounts.present > 0) && (
-            <View className="flex-row items-center mb-2.5">
-              <View 
-                className="w-3 h-3 rounded-full mr-2" 
-                style={{ backgroundColor: AttendanceStatusColors.present }} 
-              />
-              <Text className="flex-1 text-sm">Có mặt {showDefaultStatus ? 0 : statusCounts.present}</Text>
-              <Text className="text-sm text-gray-600">07:19</Text>
-            </View>
-          )}
-          
-          {(showDefaultStatus || statusCounts.late > 0) && (
-            <View className="flex-row items-center mb-2.5">
-              <View 
-                className="w-3 h-3 rounded-full mr-2" 
-                style={{ backgroundColor: AttendanceStatusColors.late }} 
-              />
-              <Text className="flex-1 text-sm">Đi muộn {showDefaultStatus ? 0 : statusCounts.late}</Text>
-              <Text className="text-sm text-gray-600">Vắng có phép</Text>
-            </View>
-          )}
-          
-          {(showDefaultStatus || statusCounts.absent > 0) && (
-            <View className="flex-row items-center mb-2.5">
-              <View 
-                className="w-3 h-3 rounded-full mr-2" 
-                style={{ backgroundColor: AttendanceStatusColors.absent }} 
-              />
-              <Text className="flex-1 text-sm">Vắng {showDefaultStatus ? 0 : statusCounts.absent}</Text>
-              <Text className="text-sm text-gray-600">Vắng không phép</Text>
-            </View>
-          )}
-          
-          {(showDefaultStatus || statusCounts.excused > 0) && (
-            <View className="flex-row items-center mb-2.5">
-              <View 
-                className="w-3 h-3 rounded-full mr-2" 
-                style={{ backgroundColor: AttendanceStatusColors.excused }} 
-              />
-              <Text className="flex-1 text-sm">Có phép {showDefaultStatus ? 0 : statusCounts.excused}</Text>
-              <Text className="text-sm text-gray-600">07:19</Text>
-            </View>
-          )}
-        </View>
+const AttendanceScreen = ({ navigation }: AttendanceScreenProps) => {
+    // Sử dụng custom hook để quản lý việc chọn học sinh
+    const {
+        parent,
+        students,
+        activeIndex,
+        activeStudent,
+        studentAvatars,
+        setActiveIndex,
+        refreshStudents,
+        loading: studentsLoading
+    } = useStudentSelector();
 
-        {attendanceLoading ? (
-          <View className="p-5 items-center">
-            <ActivityIndicator size="large" color="#E53935" />
-          </View>
-        ) : error ? (
-          <View className="p-5 items-center">
-            <Text className="text-red-600 mb-2.5 text-center">{error}</Text>
-            <TouchableOpacity 
-              className="bg-red-600 px-5 py-2.5 rounded" 
-              onPress={refreshData}
-            >
-              <Text className="text-white font-bold">Thử lại</Text>
-            </TouchableOpacity>
-          </View>
-        ) : recordsForSelectedDate.length === 0 ? (
-          <View className="p-5 items-center">
-            <Text className="text-gray-600 text-center">Không có dữ liệu điểm danh cho ngày này</Text>
-          </View>
-        ) : (
-          <View className="mt-2.5">
-            {recordsForSelectedDate.map((record) => (
-              <AttendanceItem
-                key={record._id}
-                attendance={record}
-                timeAttendance={
-                  record.student.studentCode && timeAttendanceRecords[record.student.studentCode]
-                    ? timeAttendanceRecords[record.student.studentCode]
-                    : undefined
+    const [selectedDate, setSelectedDate] = useState(new Date());
+    const [attendances, setAttendances] = useState<Attendance[]>([]);
+    const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+    const [timeAttendanceData, setTimeAttendanceData] = useState<{ [studentCode: string]: TimeAttendance }>({});
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [enrichedStudents, setEnrichedStudents] = useState<any[]>([]);
+    const [periodDefinitions, setPeriodDefinitions] = useState<PeriodDefinition[]>([]);
+
+    // Memoize selectedStudent ID để tránh re-render không cần thiết
+    const selectedStudentId = useMemo(() => {
+        const id = activeStudent?.id || activeStudent?._id;
+        return id;
+    }, [activeStudent?.id, activeStudent?._id, activeStudent?.name, activeStudent?.fullname]);
+
+    // Memoize selectedDate string để tránh tạo mới mỗi lần render
+    const selectedDateString = useMemo(() => 
+        format(selectedDate, 'yyyy-MM-dd'), 
+        [selectedDate]
+    );
+
+    // Fetch thông tin student đầy đủ nếu thiếu studentCode
+    const fetchStudentDetails = useCallback(async () => {
+        if (!students.length) return;
+
+        try {
+            const enrichedStudentPromises = students.map(async (student) => {
+                // Nếu đã có studentCode, return student hiện tại
+                if (student.studentCode) {
+                    return student;
                 }
-              />
-            ))}
-          </View>
-        )}
-      </ScrollView>
-    </SafeAreaView>
-  );
+
+                // Nếu không có studentCode, fetch từ API
+                const studentId = student.id || student._id;
+                if (!studentId) return student;
+
+                try {
+                    const response = await api.get(`/students/${studentId}`);
+                    return {
+                        ...student,
+                        studentCode: response.data.studentCode,
+                        name: response.data.name || student.name,
+                        fullname: response.data.name || student.fullname,
+                    };
+                } catch (error) {
+                    return student;
+                }
+            });
+
+            const enrichedStudentsList = await Promise.all(enrichedStudentPromises);
+            setEnrichedStudents(enrichedStudentsList);
+        } catch (error) {
+            setEnrichedStudents(students);
+        }
+    }, [students]);
+
+    // Fetch enriched students khi students thay đổi
+    useEffect(() => {
+        fetchStudentDetails();
+    }, [students, fetchStudentDetails]);
+
+    // Lấy activeStudent từ enrichedStudents
+    const currentActiveStudent = useMemo(() => {
+        if (!enrichedStudents.length || activeIndex >= enrichedStudents.length) {
+            return activeStudent;
+        }
+        return enrichedStudents[activeIndex];
+    }, [enrichedStudents, activeIndex, activeStudent]);
+
+    // Fetch periods khi có attendance data
+    const fetchPeriodsFromAttendance = useCallback(async (attendanceData: Attendance[]) => {
+        if (!attendanceData.length) return;
+        
+        try {
+            // Lấy classId từ attendance đầu tiên
+            const firstAttendance = attendanceData[0];
+            const classId = firstAttendance.class?._id || firstAttendance.class;
+            
+            if (classId) {
+                // Thử lấy schoolYear từ student data trước
+                let schoolYear = null;
+                
+                // Lấy thông tin student để có schoolYear
+                if (currentActiveStudent?.id || currentActiveStudent?._id) {
+                    try {
+                        const studentResponse = await api.get(`/students/${currentActiveStudent.id || currentActiveStudent._id}`);
+                        const studentData = studentResponse.data;
+                        
+                        // Lấy schoolYear từ student class
+                        if (studentData.class && Array.isArray(studentData.class) && studentData.class.length > 0) {
+                            const classData = studentData.class[0];
+                            schoolYear = classData.schoolYear?._id || classData.schoolYear;
+                        }
+                    } catch (studentError) {
+                        console.error('Error fetching student data:', studentError);
+                    }
+                }
+                
+                // Fallback: sử dụng năm hiện tại
+                if (!schoolYear) {
+                    const currentYear = new Date().getFullYear();
+                    schoolYear = `${currentYear}-${currentYear + 1}`;
+                }
+                
+                try {
+                    // Thử sử dụng endpoint periods trực tiếp
+                    const periodsResponse = await api.get(`/attendances/periods/${classId}/${schoolYear}`);
+                    const periodsData = periodsResponse.data.periods || [];
+                    setPeriodDefinitions(periodsData);
+                } catch (periodsError) {
+                    console.error('Error fetching periods directly:', periodsError);
+                    // Fallback: set empty periods để sử dụng default behavior
+                    setPeriodDefinitions([]);
+                }
+            } else {
+                setPeriodDefinitions([]);
+            }
+        } catch (error) {
+            console.error('Error fetching periods from attendance:', error);
+            // Nếu không fetch được periods, set empty array
+            setPeriodDefinitions([]);
+        }
+    }, [currentActiveStudent]);
+
+    const fetchAttendanceData = useCallback(async () => {
+        if (!selectedStudentId || !currentActiveStudent) return;
+        try {
+            setLoading(true);
+            
+            // Fetch attendances
+            const attendanceResponse = await api.get(`/attendances/student/${selectedStudentId}/${selectedDateString}`);
+            const attendanceData = Array.isArray(attendanceResponse.data) 
+                ? attendanceResponse.data 
+                : attendanceResponse.data.data || [];
+            setAttendances(sortAttendancesByPeriod(attendanceData));
+            
+            // Fetch periods từ attendance data
+            await fetchPeriodsFromAttendance(attendanceData);
+            
+            // Fetch time attendance data sử dụng enrichedStudents
+            const studentCodes = enrichedStudents.map(s => s.studentCode).filter(Boolean);
+            
+            const timeAttendanceResponse = await api.get('/attendances/time-attendance-by-date', {
+                params: {
+                    date: selectedDateString,
+                    studentCodes: studentCodes.join(',')
+                }
+            });
+            setTimeAttendanceData(timeAttendanceResponse.data || {});
+            
+            // Fetch leave requests
+            const leaveResponse = await api.get('/leave-requests', {
+                params: {
+                    studentId: selectedStudentId,
+                    limit: 1000
+                }
+            });
+            const leaveData = (Array.isArray(leaveResponse.data) 
+                ? leaveResponse.data 
+                : leaveResponse.data.docs || leaveResponse.data.data || [])
+                .filter((lr: any) =>
+                    String(lr.student) === String(selectedStudentId) ||
+                    String(lr.student?._id) === String(selectedStudentId)
+                );
+            setLeaveRequests(leaveData);
+        } catch (error) {
+            // Error handling
+        } finally {
+            setLoading(false);
+        }
+    }, [selectedStudentId, selectedDateString, currentActiveStudent, enrichedStudents, fetchPeriodsFromAttendance]);
+
+    useEffect(() => {
+        if (selectedStudentId && currentActiveStudent && enrichedStudents.length > 0) {
+            fetchAttendanceData();
+        }
+    }, [selectedStudentId, selectedDateString, fetchAttendanceData, currentActiveStudent, enrichedStudents]);
+
+    const onRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await fetchAttendanceData();
+        setRefreshing(false);
+    }, [fetchAttendanceData]);
+
+    const handleDateSelect = useCallback((date: Date) => {
+        setSelectedDate(date);
+    }, []);
+
+    const handleStudentSelect = useCallback((index: number) => {
+        setActiveIndex(index);
+    }, [setActiveIndex]);
+
+    const attendanceSummary = useMemo(() => {
+        if (!attendances.length) return null;
+        return createAttendanceSummary(attendances, selectedDateString);
+    }, [attendances, selectedDateString]);
+
+    const leaveRequestForDate = useMemo(() => {
+        return hasLeaveRequestForDate(
+            leaveRequests.filter((lr: any) =>
+                String(lr.student) === String(selectedStudentId) ||
+                String(lr.student?._id) === String(selectedStudentId)
+            ),
+            selectedDateString
+        );
+    }, [leaveRequests, selectedStudentId, selectedDateString]);
+
+    const timeAttendanceInfo = useMemo(() => {
+        if (!currentActiveStudent?.studentCode) {
+            return { checkIn: '', checkOut: '' };
+        }
+        
+        const result = getTimeAttendanceInfoForStudent(currentActiveStudent.studentCode, timeAttendanceData);
+        return result;
+    }, [currentActiveStudent, timeAttendanceData]);
+
+    // Process periods từ periodDefinitions
+    const processedPeriods = useMemo((): ProcessedPeriod[] => {
+        return processPeriodDefinitions(periodDefinitions);
+    }, [periodDefinitions]);
+
+    const regularPeriods = useMemo((): ProcessedPeriod[] => {
+        return processedPeriods.filter(p => p.isRegular);
+    }, [processedPeriods]);
+
+    const specialPeriods = useMemo((): ProcessedPeriod[] => {
+        return processedPeriods.filter(p => !p.isRegular);
+    }, [processedPeriods]);
+
+    const getStatusStyle = useCallback((status: string) => {
+        switch (status) {
+            case 'present':
+                return {
+                    bg: '#ECFDF5',
+                    color: '#10B981',
+                    dot: '#10B981',
+                };
+            case 'late':
+                return {
+                    bg: '#FEF7E6',
+                    color: '#F59E0B',
+                    dot: '#F59E0B',
+                };
+            case 'absent':
+                return {
+                    bg: '#FEF2F2',
+                    color: '#EF4444',
+                    dot: '#EF4444',
+                };
+            case 'excused':
+                return {
+                    bg: '#FFFAF3',
+                    color: '#F59E0B',
+                    dot: '#F59E0B',
+                };
+            default:
+                return {
+                    bg: '#F3F4F6',
+                    color: '#6B7280',
+                    dot: '#6B7280',
+                };
+        }
+    }, []);
+
+    const attendanceItems = useMemo(() => {
+        if (leaveRequestForDate) return [];
+        
+        // Sử dụng helper function mới để tạo attendance items
+        return createAttendanceItems(attendances, timeAttendanceInfo, periodDefinitions);
+    }, [leaveRequestForDate, attendances, timeAttendanceInfo, periodDefinitions]);
+
+    const renderAttendanceList = useCallback(() => {
+        if (leaveRequestForDate) {
+            return (
+                <View className="flex-row items-center rounded-full px-6 py-3 mb-3 bg-yellow-50">
+                    <View style={{ backgroundColor: '#F59E0B', width: 12, height: 12, borderRadius: 6, marginRight: 18 }} />
+                    <Text style={{ color: '#F59E0B', fontSize: 16, fontWeight: '500' }}>Học sinh nghỉ học có phép</Text>
+                </View>
+            );
+        }
+        
+        // Kiểm tra xem có dữ liệu điểm danh nào không
+        if (attendanceItems.length === 0) {
+            return (
+                <View className="flex-row items-center justify-center px-6 py-8">
+                    <Text style={{ color: '#6B7280', fontSize: 16 }}>Không có dữ liệu điểm danh cho ngày này</Text>
+                </View>
+            );
+        }
+        
+        // Reverse the order để hiển thị theo thứ tự từ trên xuống: Checkout -> Tiết 3 -> Tiết 2 -> Tiết 1 -> Checkin
+        const reversedItems = [...attendanceItems].reverse();
+        
+        return (
+            <View>
+                {reversedItems.map((item, idx) => {
+                    const style = getStatusStyle(item.status);
+                    const isPeriod = item.type === 'period';
+                    const isCheckinCheckout = item.type === 'checkin' || item.type === 'checkout';
+                    const isSpecialPeriod = item.type === 'special';
+                    
+                    // Hiển thị tiết đặc biệt khác biệt
+                    if (isSpecialPeriod) {
+                        return (
+                            <View
+                                key={idx}
+                                className="flex-row items-center rounded-full px-6 py-3 mb-3 mx-4"
+                                style={{ backgroundColor: '#FFF7ED' }}
+                            >
+                                <View style={{ backgroundColor: '#FB923C', width: 12, height: 12, borderRadius: 40, marginRight: 18 }} />
+                                <Text style={{ color: '#222', fontSize: 14, flex: 1 }}>{item.label}</Text>
+                                {item.time && (
+                                    <Text style={{ color: '#FB923C', fontSize: 14 }}>{item.time}</Text>
+                                )}
+                            </View>
+                        );
+                    }
+                    
+                    // Lấy text hiển thị phù hợp
+                    let displayText = '';
+                    if (isPeriod) {
+                        // Hiển thị trạng thái cho tiết học
+                        switch (item.status) {
+                            case 'present':
+                                displayText = 'Có mặt';
+                                break;
+                            case 'absent':
+                                displayText = 'Vắng mặt';
+                                break;
+                            case 'late':
+                                displayText = 'Vào muộn';
+                                break;
+                            case 'excused':
+                                displayText = 'Vắng có phép';
+                                break;
+                            default:
+                                displayText = item.note || 'Có mặt';
+                        }
+                    } else if (isCheckinCheckout) {
+                        // Hiển thị thời gian cho check-in/check-out
+                        displayText = item.time || '';
+                    }
+                    
+                    return (
+                        <View
+                            key={idx}
+                            style={{ backgroundColor: style.bg }}
+                            className="flex-row items-center rounded-full px-6 py-3 mb-3 mx-4"
+                        >
+                            <View style={{ backgroundColor: style.dot, width: 12, height: 12, borderRadius: 40, marginRight: 18 }} />
+                            <Text style={{ color: '#222', fontSize: 14, flex: 1 }}>{item.label}</Text>
+                            {displayText && (
+                                <Text style={{ color: style.color, fontSize: 14 , fontWeight: 700 }}>{displayText}</Text>
+                            )}
+                        </View>
+                    );
+                })}
+            </View>
+        );
+    }, [leaveRequestForDate, attendanceItems, getStatusStyle]);
+
+    const handleGoBack = useCallback(() => {
+        if (navigation) {
+            try {
+                navigation.goBack();
+            } catch (error) {
+                console.warn('Navigation error:', error);
+            }
+        }
+    }, [navigation]);
+
+    // --- return UI, kiểm tra điều kiện ở đây ---
+    return (
+        <SafeAreaView className="flex-1 bg-white">
+            {(!parent) ? (
+                <View className="flex-1 justify-center items-center">
+                    <Text className="text-gray-500">Không có dữ liệu phụ huynh</Text>
+                </View>
+            ) : (!currentActiveStudent || (!currentActiveStudent.id && !currentActiveStudent._id)) ? (
+                <View className="flex-1 justify-center items-center">
+                    <Text className="text-gray-500">Không có dữ liệu học sinh hợp lệ</Text>
+                </View>
+            ) : (
+                <>
+                    <View className="flex-row items-center justify-between p-4 bg-white ">
+                        <BackButton onGoBack={handleGoBack} />
+                        <Title />
+                        <StudentSelector
+                            students={enrichedStudents}
+                            activeIndex={activeIndex}
+                            studentAvatars={studentAvatars}
+                            onStudentSelect={handleStudentSelect}
+                            size={32}
+                        />
+                    </View>
+                    <ScrollView
+                        className="bg-white"
+                        refreshControl={
+                            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                        }
+                    >
+                        <AttendanceCalendar
+                            selectedDate={selectedDate}
+                            onDateSelect={handleDateSelect}
+                        />
+                        
+                        {renderAttendanceList()}
+                    </ScrollView>
+                </>
+            )}
+        </SafeAreaView>
+    );
 };
 
-export default Attendance;
+export default AttendanceScreen;

@@ -9,11 +9,19 @@ import {
 } from 'react-native';
 import { useForm } from 'react-hook-form';
 import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 // PNG banner đã xuất phẳng
 import BannerPng from '../assets/welcome.png';
 
+type RootStackParamList = {
+    Welcome: undefined;
+    SignIn: undefined;
+};
+
+type WelcomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Welcome'>;
+
 const WelcomeScreen = () => {
-    const navigation = useNavigation();
+    const navigation = useNavigation<WelcomeScreenNavigationProp>();
     const { handleSubmit } = useForm();
     const { width: screenWidth } = Dimensions.get('window');
     const BANNER_WIDTH = 1100;

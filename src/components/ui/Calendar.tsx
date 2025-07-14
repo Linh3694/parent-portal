@@ -18,6 +18,7 @@ interface CalendarProps {
     multiSelect?: boolean;
     rangeSelect?: boolean;
     highlightedDates?: Date[];
+    customContainerStyle?: any;
 }
 
 const Calendar: React.FC<CalendarProps> = ({ 
@@ -27,7 +28,8 @@ const Calendar: React.FC<CalendarProps> = ({
     onDatesChange,
     multiSelect = true,
     rangeSelect = false,
-    highlightedDates = []
+    highlightedDates = [],
+    customContainerStyle = undefined
 }) => {
     const [currentDate, setCurrentDate] = useState(new Date());
     
@@ -165,7 +167,7 @@ const Calendar: React.FC<CalendarProps> = ({
     const days = getDaysInMonth(currentDate);
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, customContainerStyle]}>
             {/* Header with month navigation */}
             <View style={styles.header}>
                 <TouchableOpacity 

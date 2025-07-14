@@ -1,6 +1,22 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import OnboardingScreen from '../screens/OnboardingScreen';
+export type RootStackParamList = {
+  Welcome: undefined;
+  SignIn: undefined;
+  Home: undefined;
+  MenuScreen: undefined;
+  StudentInfo: undefined;
+  OnlineAccount: undefined;
+  Timetable: undefined;
+  ContactBook: undefined;
+  Attendance: undefined;
+  StudyReport: undefined;
+  Absence: undefined;
+  CreateLeaveRequest: undefined;
+  MenuService: undefined;
+  Health: undefined;
+  Bus: undefined;
+};
 import WelcomeScreen from '../screens/WelcomeScreen';
 import SignInScreen from '../screens/SignInScreen';
 import MainTabNavigator from './MainTabNavigator';
@@ -18,17 +34,18 @@ import MenuService from '../screens/MenuScreen/Service/MenuService';
 import Health from '../screens/MenuScreen/Service/Health';
 import Bus from '../screens/MenuScreen/Service/Bus';
 
-const Stack = createNativeStackNavigator();
+const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const AppNavigator = () => {
     return (
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+        <Stack.Navigator 
+            screenOptions={{ headerShown: false }}
+            initialRouteName="Welcome"
+        >
             <Stack.Screen name="Welcome" component={WelcomeScreen} />
             <Stack.Screen name="SignIn" component={SignInScreen} />
             <Stack.Screen name="Home" component={MainTabNavigator} />
             <Stack.Screen name="MenuScreen" component={MenuScreen} />
-            {/* Các route cho menu con */}
             <Stack.Screen name="StudentInfo" component={StudentInfo} />
             <Stack.Screen name="OnlineAccount" component={OnlineAccount} />
             <Stack.Screen name="Timetable" component={Timetable} />

@@ -1,41 +1,52 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, TextInput } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { View, Text, TouchableOpacity, ScrollView, TextInput, SafeAreaView } from 'react-native';
+import { useNavigation, NavigationProp } from '@react-navigation/native';
+import { RootStackParamList } from '../../navigation/AppNavigator';
+import StudentInfo from '../../assets/StudentInfo.svg';
+import OnlineAccount from '../../assets/OnlineAccount.svg';
+import Timetable from '../../assets/Timetable.svg';
+import ContactBook from '../../assets/ContactBook.svg';
+import Attendance from '../../assets/Attendance.svg';
+import StudyReport from '../../assets/StudyReport.svg';
+import Absence from '../../assets/Absence.svg';
+import MenuService from '../../assets/MenuService.svg';
+import Health from '../../assets/Health.svg';
+import Bus from '../../assets/Bus.svg';
 
 const MENU_GROUPS = [
     {
         title: 'Thông tin cơ bản',
         items: [
-            { label: 'Thông tin học sinh', screen: 'StudentInfo' },
-            { label: 'Tài khoản online', screen: 'OnlineAccount' },
-            { label: 'Thời khóa biểu', screen: 'Timetable' },
+            { label: 'Thông tin học sinh', screen: 'StudentInfo', icon: 'StudentInfo' },
+            { label: 'Tài khoản online', screen: 'OnlineAccount', icon: 'OnlineAccount' },
+            { label: 'Thời khóa biểu', screen: 'Timetable', icon: 'Timetable' },
         ],
     },
     {
         title: 'Hàng ngày',
         items: [
-            { label: 'Sổ liên lạc', screen: 'ContactBook' },
-            { label: 'Điểm danh', screen: 'Attendance' },
-            { label: 'Báo cáo học tập', screen: 'StudyReport' },
-            { label: 'Nghỉ phép', screen: 'Absence' },
+            { label: 'Sổ liên lạc', screen: 'ContactBook', icon: 'ContactBook' },
+            { label: 'Điểm danh', screen: 'Attendance', icon: 'Attendance' },
+            { label: 'Báo cáo học tập', screen: 'StudyReport', icon: 'StudyReport' },
+            { label: 'Nghỉ phép', screen: 'Absence', icon: 'Absence' },
         ],
     },
     {
         title: 'Dịch vụ học sinh',
         items: [
-            { label: 'Thực đơn', screen: 'MenuService' },
-            { label: 'Y tế', screen: 'Health' },
-            { label: 'Bus', screen: 'Bus' },
+            { label: 'Thực đơn', screen: 'MenuService', icon: 'MenuService' },
+            { label: 'Y tế', screen: 'Health', icon: 'Health' },
+            { label: 'Bus', screen: 'Bus', icon: 'Bus' },
         ],
     },
 ];
 
 const MenuScreen = () => {
-    const navigation = useNavigation();
+    const navigation = useNavigation<NavigationProp<RootStackParamList, 'MenuScreen'>>();
 
     return (
-        <View className="flex-1 bg-[#FAF3EF]">
-            <View className="bg-white rounded-3xl flex-1 mx-2 mt-8 mb-2 p-4">
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+            <View className="flex bg-white p-5">
                 {/* Header */}
                 <View className="flex-row items-center mb-4">
                     <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -62,8 +73,27 @@ const MenuScreen = () => {
                                         className="w-1/3 items-center mb-6"
                                         onPress={() => navigation.navigate(item.screen as never)}
                                     >
-                                        <View className="w-20 h-20 rounded-2xl bg-[#FAF9F2] mb-2 justify-center items-center" />
-                                        <Text className="text-center text-base text-[#3F4246] font-medium mt-1">{item.label}</Text>
+                                        <View className="w-20 h-20 rounded-2xl bg-[#FAF9F2] mb-2 justify-center items-center">
+                                            {item.icon === 'StudentInfo' && <StudentInfo width={40} height={40} />}
+                                            {item.icon === 'OnlineAccount' && <OnlineAccount width={40} height={40} />}
+                                            {item.icon === 'Timetable' && <Timetable width={40} height={40} />}
+                                            {item.icon === 'ContactBook' && <ContactBook width={40} height={40} />}
+                                            {item.icon === 'Attendance' && <Attendance width={40} height={40} />}
+                                            {item.icon === 'StudyReport' && <StudyReport width={40} height={40} />}
+                                            {item.icon === 'Absence' && <Absence width={40} height={40} />}
+                                            {item.icon === 'MenuService' && <MenuService width={40} height={40} />}
+                                            {item.icon === 'Health' && <Health width={40} height={40} />}
+                                            {item.icon === 'Bus' && <Bus width={40} height={40} />}
+                                        </View>
+                                        <Text className="text-center text-base text-[#3F4246] font-medium mt-1">
+                                            {(() => {
+                                                const words = item.label.split(' ');
+                                                if (words.length > 2) {
+                                                    return words.slice(0, 2).join(' ') + '\n' + words.slice(2).join(' ');
+                                                }
+                                                return item.label;
+                                            })()}
+                                        </Text>
                                     </TouchableOpacity>
                                 ))}
                             </View>
@@ -71,7 +101,7 @@ const MenuScreen = () => {
                     ))}
                 </ScrollView>
             </View>
-        </View>
+        </SafeAreaView>
     );
 };
 

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, Image, ScrollView, RefreshControl } from 'react-native';
 import { Pressable } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import MenuIcon from '../assets/menu.svg';
 import api, { API_URL, BASE_URL } from '../config/api.config';
@@ -9,78 +8,50 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { getSpecialLessonsForGradeLevel, expandSpecialLessons } from '../utils/specialLessons';
 import NewfeedBg from '../assets/newfeed.svg';
 import AppText from '../components/AppText';
+import { 
+    Period, 
+    SpecialLesson, 
+    ClassInfo, 
+    PeriodDefinition, 
+    TimetableEntry,
+    CommunicationBook,
+    DateDisplay
+} from '../types';
+import {
+    getAvatarUrl,
+    mergePeriodsAndSpecialLessons,
+    extractGradeLevel,
+    insertBreaksToTimetable,
+    getCurrentLesson,
+    mergeTimetableData,
+    getDayProgress,
+    getRecentDates,
+    DAYS_OF_WEEK
+} from '../utils/studentHelpers';
+import { useStudentSelector } from '../hooks/useStudentSelector';
+import StudentSelector from '../components/StudentSelector';
+
 const AVATAR_SIZE = 48;
 const AVATAR_BORDER = 3;
 
-// Helper function để tạo avatar URL nhất quán
-const getAvatarUrl = (student: any, avatarCache: {[key: string]: string}) => {
-    const studentId = student.id || student._id;
-    const studentName = student.name || student.fullname || student.studentName || 'Unknown';
-    return avatarCache[studentId] || `https://ui-avatars.com/api/?name=${encodeURIComponent(studentName)}&background=E0E0E0&color=757575&size=128`;
-};
-
-type Period = {
-    periodNumber: number;
-    startTime: string;
-    endTime: string;
-    label?: string;
-    dayOfWeek?: string;
-};
-
-type SpecialLesson = {
-    name: string;
-    dayOfWeek: string;
-    startTime: string;
-    endTime: string;
-    description?: string;
-};
-
-function mergePeriodsAndSpecialLessons(
-    periods: Period[],
-    specialLessons: SpecialLesson[],
-    dayOfWeek: string
-) {
-    // Lấy periods và specialLessons của ngày này
-    const periodsOfDay = periods.map(p => ({ ...p, dayOfWeek }));
-    const specialsOfDay = specialLessons
-        .filter(s => s.dayOfWeek === dayOfWeek || s.dayOfWeek === 'All')
-        .map(s => ({ ...s, periodNumber: undefined }));
-
-    // Gộp và sort theo startTime
-    const all = [...periodsOfDay, ...specialsOfDay].sort(
-        (a, b) => (a.startTime || '').localeCompare(b.startTime || '')
-    );
-
-    // Nếu muốn ưu tiên period, loại bỏ specialLesson trùng time với period
-    const result: any[] = [];
-    for (let i = 0; i < all.length; i++) {
-        const cur = all[i];
-        // Nếu là specialLesson, kiểm tra có period nào trùng time không
-        if (!cur.periodNumber) {
-            const overlap = periodsOfDay.find(
-                p =>
-                    (p.startTime <= cur.startTime && cur.startTime < p.endTime) ||
-                    (cur.startTime <= p.startTime && p.startTime < cur.endTime)
-            );
-            if (overlap) continue; // bỏ qua specialLesson trùng period
-        }
-        result.push(cur);
-    }
-    return result;
-}
-
-const DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-
 const StudentScreen = () => {
-    const [parent, setParent] = useState<any>(null);
-    const [students, setStudents] = useState<any[]>([]);
-    const [activeIndex, setActiveIndex] = useState(0);
-    const [classInfo, setClassInfo] = useState<any>(null);
-    const [timetable, setTimetable] = useState<any[]>([]);
+    // Sử dụng custom hook để quản lý việc chọn học sinh
+    const {
+        parent,
+        students,
+        activeIndex,
+        activeStudent,
+        studentAvatars,
+        setActiveIndex,
+        refreshStudents,
+        loading: studentsLoading
+    } = useStudentSelector();
+
+    const [classInfo, setClassInfo] = useState<ClassInfo | null>(null);
+    const [timetable, setTimetable] = useState<TimetableEntry[]>([]);
     const [now, setNow] = useState(new Date());
-    const [periodDefinitions, setPeriodDefinitions] = useState<any[]>([]);
-    const [communicationBooks, setCommunicationBooks] = useState<any[]>([]);
-    const [studentAvatars, setStudentAvatars] = useState<{[key: string]: string}>({});
+    const [periodDefinitions, setPeriodDefinitions] = useState<PeriodDefinition[]>([]);
+    const [communicationBooks, setCommunicationBooks] = useState<CommunicationBook[]>([]);
     const [selectedDate, setSelectedDate] = useState<string>(() => {
         const today = new Date();
         return today.getFullYear() + '-' +
@@ -88,20 +59,7 @@ const StudentScreen = () => {
             String(today.getDate()).padStart(2, '0');
     });
     // Các ngày gần nhất (3 ngày học gần nhất, bỏ cuối tuần) – tính sẵn để không tạo lại mỗi render
-    const recentDates = React.useMemo(() => {
-        const days: { date: string; display: string }[] = [];
-        let d = new Date();
-        while (days.length < 3) {
-            const dow = d.getDay();          // 0 = Sun … 6 = Sat
-            if (dow !== 0 && dow !== 6) {    // Bỏ T7‑CN
-                const iso = d.toISOString().split('T')[0];                    // yyyy‑MM‑dd
-                const display = d.toLocaleDateString('vi-VN', { day: '2-digit', month: 'numeric' }); // 07/5
-                days.push({ date: iso, display });
-            }
-            d.setDate(d.getDate() - 1);
-        }
-        return days;
-    }, []);
+    const recentDates = React.useMemo(() => getRecentDates(), []);
 
     const handleSelectDate = React.useCallback((date: string) => {
         setSelectedDate(date);
@@ -114,63 +72,6 @@ const StudentScreen = () => {
         return () => clearInterval(interval);
     }, []);
 
-    useEffect(() => {
-        fetchParentAndStudents();
-    }, []);
-
-    const fetchParentAndStudents = async () => {
-        try {
-            const parentStr = await AsyncStorage.getItem('parent');
-            if (!parentStr) return;
-            
-            const parentObj = JSON.parse(parentStr);
-            setParent(parentObj);
-            
-            if (parentObj.students && parentObj.students.length > 0) {
-                setStudents(parentObj.students);
-                await fetchStudentAvatars(parentObj.students);
-            }
-        } catch (error: any) {
-            console.error('Error in fetchParentAndStudents:', error);
-        }
-    };
-
-    const fetchStudentAvatars = async (studentList: any[]) => {
-        const avatars: {[key: string]: string} = {};
-        
-        for (const student of studentList) {
-            try {
-                const studentId = student.id || student._id;
-                const studentName = student.name || student.fullname || student.studentName || 'Unknown';
-                
-                // Thử lấy avatar từ Photo model trước
-                const response = await api.get(`/students/${studentId}/photo/current`);
-                if (response.data && response.data.photoUrl) {
-                    avatars[studentId] = `${BASE_URL}${response.data.photoUrl}`;
-                } else {
-                    // Fallback về Student.avatarUrl hoặc default
-                    avatars[studentId] = student.avatarUrl 
-                        ? `${BASE_URL}${encodeURI(student.avatarUrl)}`
-                        : student.user?.avatarUrl
-                            ? `${BASE_URL}${encodeURI(student.user.avatarUrl)}`
-                            : `https://ui-avatars.com/api/?name=${encodeURIComponent(studentName)}&background=E0E0E0&color=757575&size=128`;
-                }
-            } catch (error) {
-                // Nếu API lỗi, dùng fallback
-                const studentId = student.id || student._id;
-                const studentName = student.name || student.fullname || student.studentName || 'Unknown';
-                
-                avatars[studentId] = student.avatarUrl 
-                    ? `${BASE_URL}${encodeURI(student.avatarUrl)}`
-                    : student.user?.avatarUrl
-                        ? `${BASE_URL}${encodeURI(student.user.avatarUrl)}`
-                        : `https://ui-avatars.com/api/?name=${encodeURIComponent(studentName)}&background=E0E0E0&color=757575&size=128`;
-            }
-        }
-        
-        setStudentAvatars(avatars);
-    };
-
     const fetchClassAndTimetable = async (classId: string) => {
         try {
             // Kiểm tra classId hợp lệ
@@ -178,10 +79,6 @@ const StudentScreen = () => {
                 console.warn('⚠️ ClassId is empty or invalid');
                 return;
             }
-
-            console.log('🔍 Fetching data for classId:', classId);
-            console.log('🔍 API Base URL:', API_URL);
-            
             let classData = null;
 
             // Lấy thông tin lớp với populate để có đầy đủ thông tin gradeLevel và school
@@ -189,7 +86,6 @@ const StudentScreen = () => {
                 const classRes = await api.get(`/classes/${classId}?populate=gradeLevel.school`);
                 classData = classRes.data;
                 setClassInfo(classData);
-                console.log('✅ Class info fetched:', classData?.className, classData?.schoolYear);
             } catch (classError: any) {
                 console.error('❌ Error fetching class info:', classError.response?.status, classError.response?.data);
                 return;
@@ -198,7 +94,6 @@ const StudentScreen = () => {
             // Lấy thời khóa biểu
             try {
                 const timetableRes = await api.get(`/timetables/class/${classId}`);
-                console.log('✅ Timetable fetched:', timetableRes.data?.length, 'entries');
                 setTimetable(timetableRes.data || []);
             } catch (timetableError: any) {
                 console.error('❌ Error fetching timetable:', timetableError.response?.status, timetableError.response?.data);
@@ -218,7 +113,6 @@ const StudentScreen = () => {
                         || classData.gradeLevel?.school 
                         || null;
 
-                    console.log('🔍 Fetching period definitions for:', { schoolYearId, schoolId });
 
                     if (schoolYearId) {
                         // Gọi API với schoolId param như web version
@@ -228,7 +122,6 @@ const StudentScreen = () => {
                         
                         const periodDefsRes = await api.get(periodDefsUrl);
                         const periods = periodDefsRes.data.data || periodDefsRes.data || [];
-                        console.log('✅ Period definitions fetched:', periods.length, 'periods');
                         setPeriodDefinitions(periods);
                     }
                 } catch (periodsError: any) {
@@ -277,14 +170,12 @@ const StudentScreen = () => {
 
     if (!parent) return null;
 
-    const activeStudent = students[activeIndex];
-
     // Lấy special lessons dựa vào grade level
     const gradeLevel = extractGradeLevel(classInfo);
     const specialLessons = expandSpecialLessons(getSpecialLessonsForGradeLevel(gradeLevel || 1));
 
     // Sử dụng period definitions từ API thay vì hardcode
-    const periods = periodDefinitions.length > 0 
+    const periods: Period[] = periodDefinitions.length > 0 
         ? periodDefinitions.map(pd => ({
             periodNumber: pd.periodNumber,
             startTime: pd.startTime,
@@ -305,7 +196,7 @@ const StudentScreen = () => {
             { periodNumber: 10, startTime: "16:30", endTime: "17:15", label: "Tiết 10" }
         ];
 
-    let fullTimetable: any[] = [];
+    let fullTimetable: TimetableEntry[] = [];
     for (const day of DAYS_OF_WEEK) {
         // 1. Merge timetable thực tế vào periods
         const periodsWithData = mergeTimetableData(
@@ -336,7 +227,7 @@ const StudentScreen = () => {
 
     const onRefresh = async () => {
         setRefreshing(true);
-        await fetchParentAndStudents();
+        await refreshStudents();
         setRefreshing(false);
     };
 
@@ -372,36 +263,13 @@ const StudentScreen = () => {
 
                 {/* Avatars bên phải, số lượng linh hoạt */}
                 <View className="flex-row items-center ml-2">
-                    {students.map((stu: any, idx: number) => (
-                        <TouchableOpacity
-                            key={stu.id || stu._id || idx}
-                            onPress={() => setActiveIndex(idx)}
-                            className={idx === 0 ? '' : '-ml-2'}
-                        >
-                            {idx === activeIndex ? (
-                                <LinearGradient
-                                    colors={['#FF4500', '#FFD700']}
-                                    style={{ padding: 2, borderRadius: 999 }}
-                                >
-                                    <Image
-                                        source={{ 
-                                            uri: getAvatarUrl(stu, studentAvatars)
-                                        }}
-                                        className="w-10 h-10 rounded-full bg-white"
-                                    />
-                                </LinearGradient>
-                            ) : (
-                                <View className="border border-gray-400 rounded-full p-0.5 bg-white">
-                                    <Image
-                                        source={{
-                                            uri: getAvatarUrl(stu, studentAvatars)
-                                        }}
-                                        className="w-10 h-10 rounded-full"
-                                    />
-                                </View>
-                            )}
-                        </TouchableOpacity>
-                    ))}
+                    <StudentSelector
+                        students={students}
+                        activeIndex={activeIndex}
+                        studentAvatars={studentAvatars}
+                        onStudentSelect={setActiveIndex}
+                        size={32}
+                    />
                 </View>
             </View>
 
@@ -481,20 +349,6 @@ const StudentScreen = () => {
                     ) : (
                         <View className="h-full flex flex-col items-start justify-end">
                             <AppText className="text-lg text-gray-400">Hiện tại không có tiết học nào</AppText>
-                            {/* Debug info - có thể xóa sau */}
-                            {__DEV__ && (
-                                <>
-                                    <AppText className="text-xs text-gray-400 mt-2">
-                                        Timetable: {timetable.length} tiết
-                                    </AppText>
-                                    <AppText className="text-xs text-gray-400">
-                                        Periods: {periodDefinitions.length} định nghĩa
-                                    </AppText>
-                                    <AppText className="text-xs text-gray-400">
-                                        Class: {classInfo?.name || 'Chưa có'}
-                                    </AppText>
-                                </>
-                            )}
                         </View>
                     )}
                 </View>
@@ -593,171 +447,5 @@ const StudentScreen = () => {
         </ScrollView>
     );
 };
-
-function extractGradeLevel(classInfo: any): number | null {
-    if (!classInfo || !classInfo.gradeLevel) return null;
-    if (typeof classInfo.gradeLevel === 'object') {
-        const code = classInfo.gradeLevel.code || classInfo.gradeLevel.name;
-        if (typeof code === 'string') {
-            const match = code.match(/\d+/);
-            if (match) return parseInt(match[0], 10);
-        }
-    }
-    if (typeof classInfo.gradeLevel === 'number') return classInfo.gradeLevel;
-    if (typeof classInfo.gradeLevel === 'string' && /^\d+$/.test(classInfo.gradeLevel)) {
-        return parseInt(classInfo.gradeLevel, 10);
-    }
-    return null;
-}
-
-function insertBreaksToTimetable(timetable: any[]): any[] {
-    let result: any[] = [];
-    for (const day of DAYS_OF_WEEK) {
-        const lessons = timetable.filter(item =>
-            (item.timeSlot?.dayOfWeek || item.dayOfWeek) === day
-        ).sort((a, b) => {
-            const aStart = a.timeSlot?.startTime || a.startTime;
-            const bStart = b.timeSlot?.startTime || b.startTime;
-            return aStart.localeCompare(bStart);
-        });
-
-        for (let i = 0; i < lessons.length; i++) {
-            result.push(lessons[i]);
-            if (i < lessons.length - 1) {
-                const endCurrent = lessons[i].timeSlot?.endTime || lessons[i].endTime;
-                const startNext = lessons[i + 1].timeSlot?.startTime || lessons[i + 1].startTime;
-                // Kiểm tra có specialLesson nào trùng khoảng này không
-                const hasSpecial = lessons.some(
-                    (l, idx) =>
-                        idx !== i &&
-                        (l.startTime || l.timeSlot?.startTime) === endCurrent &&
-                        (l.endTime || l.timeSlot?.endTime) === startNext
-                );
-                if (endCurrent && startNext && endCurrent !== startNext && !hasSpecial) {
-                    result.push({
-                        name: "Nghỉ giữa giờ",
-                        dayOfWeek: day,
-                        startTime: endCurrent,
-                        endTime: startNext,
-                        description: "Nghỉ giải lao giữa các tiết"
-                    });
-                }
-            }
-        }
-    }
-    return result;
-}
-
-const getCurrentLesson = (timetable: any[]) => {
-    if (!timetable || timetable.length === 0) {
-        return null;
-    }
-
-    const now = new Date();
-    const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-    
-    // Chỉ xử lý ngày học (Monday-Friday)
-    if (dayOfWeek === 0 || dayOfWeek === 6) {
-        return null; // Cuối tuần không có tiết học
-    }
-    
-    const currentDay = DAYS_OF_WEEK[dayOfWeek - 1]; // Convert to Monday=0, Tuesday=1, etc.
-    const currentTime = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-
-    const currentLesson = timetable.find(lesson => {
-        const day = lesson.timeSlot?.dayOfWeek || lesson.dayOfWeek;
-        const startTime = lesson.timeSlot?.startTime || lesson.startTime;
-        const endTime = lesson.timeSlot?.endTime || lesson.endTime;
-
-        const isRightDay = day === currentDay;
-        const isInTime = startTime && endTime && startTime <= currentTime && currentTime <= endTime;
-
-        return isRightDay && isInTime;
-    });
-
-    return currentLesson;
-};
-
-function mergeTimetableData(periods: Period[], timetable: any[], dayOfWeek: string) {
-    if (__DEV__) {
-        console.log('🔍 mergeTimetableData called:', {
-            dayOfWeek,
-            periodsCount: periods.length,
-            timetableCount: timetable.length
-        });
-        
-        if (periods.length > 0) {
-            console.log('📅 Sample period:', {
-                periodNumber: periods[0].periodNumber,
-                startTime: periods[0].startTime,
-                endTime: periods[0].endTime
-            });
-        }
-        
-        if (timetable.length > 0) {
-            console.log('📅 Sample timetable entry:', {
-                dayOfWeek: timetable[0].timeSlot?.dayOfWeek || timetable[0].dayOfWeek,
-                startTime: timetable[0].timeSlot?.startTime || timetable[0].startTime,
-                endTime: timetable[0].timeSlot?.endTime || timetable[0].endTime,
-                subject: timetable[0].subject?.name
-            });
-        }
-    }
-    
-    const merged = periods.map(period => {
-        // Tìm entry thực tế trong timetable ứng với period này
-        const realLesson = timetable.find(
-            t =>
-                (t.timeSlot?.dayOfWeek || t.dayOfWeek) === dayOfWeek &&
-                (t.timeSlot?.startTime || t.startTime) === period.startTime &&
-                (t.timeSlot?.endTime || t.endTime) === period.endTime
-        );
-        
-        if (realLesson) {
-            if (__DEV__) {
-                console.log('✅ Found lesson match:', {
-                    dayOfWeek,
-                    periodNumber: period.periodNumber,
-                    subject: realLesson.subject?.name,
-                    teachers: realLesson.teachers?.map((t: any) => t.fullname).join(', ')
-                });
-            }
-            
-            return {
-                ...period,
-                subject: realLesson.subject, // subject là object { name, ... }
-                teachers: realLesson.teachers,
-                timeSlot: realLesson.timeSlot,
-            };
-        }
-        return period;
-    });
-    
-    if (__DEV__) {
-        const lessonsFound = merged.filter(m => (m as any).subject).length;
-        console.log('📊 Merge result:', {
-            dayOfWeek,
-            totalPeriods: periods.length,
-            lessonsFound,
-            emptySlots: periods.length - lessonsFound
-        });
-    }
-    
-    return merged;
-}
-
-// Thêm hàm tính phần trăm tiến trình thời gian trong ngày
-function getDayProgress(now: Date): number {
-    // Giới hạn thời gian trong khoảng 08:00 - 16:15
-    const start = new Date(now);
-    start.setHours(8, 0, 0, 0);
-    const end = new Date(now);
-    end.setHours(16, 15, 0, 0);
-    if (now < start) return 0;
-    if (now > end) return 100;
-    const total = end.getTime() - start.getTime();
-    const current = now.getTime() - start.getTime();
-    return Math.min(100, Math.max(0, (current / total) * 100));
-}
 
 export default StudentScreen;

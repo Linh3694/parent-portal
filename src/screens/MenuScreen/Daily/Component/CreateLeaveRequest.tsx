@@ -23,6 +23,8 @@ import AppText from '../../../../components/AppText';
 import Calendar from '../../../../components/ui/Calendar';
 import api, { BASE_URL } from '../../../../config/api.config';
 import UploadsIcon from '../../../../assets/uploads.svg';
+import { getAvatarUrl } from '../../../../utils/studentHelpers';
+import { StudentAvatarCache } from '../../../../types';
 
 interface Student {
     id: string;
@@ -52,7 +54,7 @@ const CreateLeaveRequest = () => {
     const [currentStep, setCurrentStep] = useState(1);
     const [students, setStudents] = useState<Student[]>([]);
     const [selectedStudents, setSelectedStudents] = useState<Student[]>([]);
-    const [studentAvatars, setStudentAvatars] = useState<{[key: string]: string}>({});
+    const [studentAvatars, setStudentAvatars] = useState<StudentAvatarCache>({});
     const [formData, setFormData] = useState<LeaveRequest>({
         studentId: '',
         studentName: '',
@@ -106,7 +108,7 @@ const CreateLeaveRequest = () => {
     };
 
     const fetchStudentAvatars = async (studentList: any[]) => {
-        const avatars: {[key: string]: string} = {};
+        const avatars: StudentAvatarCache = {};
         
         for (const student of studentList) {
             try {
@@ -141,11 +143,7 @@ const CreateLeaveRequest = () => {
         setStudentAvatars(avatars);
     };
 
-    const getAvatarUrl = (student: Student, avatarCache: {[key: string]: string}) => {
-        const studentId = student.id || student._id || '';
-        const studentName = student.name || student.fullname || student.studentName || 'Unknown';
-        return avatarCache[studentId] || `https://ui-avatars.com/api/?name=${encodeURIComponent(studentName)}&background=E0E0E0&color=757575&size=128`;
-    };
+
 
     const handleNext = () => {
         if (currentStep === 1 && selectedStudents.length === 0) {

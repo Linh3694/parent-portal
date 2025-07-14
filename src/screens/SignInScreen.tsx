@@ -4,9 +4,17 @@ import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from '../config/api.config';
 import logo from '../assets/wellspring-logo.png';
+
+type RootStackParamList = {
+    SignIn: undefined;
+    Home: undefined;
+};
+
+type SignInScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'SignIn'>;
 
 const schema = yup.object().shape({
     phone: yup.string().required('Số điện thoại là bắt buộc'),
@@ -14,7 +22,7 @@ const schema = yup.object().shape({
 });
 
 const SignInScreen = () => {
-    const navigation = useNavigation();
+    const navigation = useNavigation<SignInScreenNavigationProp>();
     const { control, handleSubmit, formState: { errors } } = useForm({
         resolver: yupResolver(schema),
     });

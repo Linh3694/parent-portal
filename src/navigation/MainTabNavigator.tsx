@@ -30,7 +30,7 @@ const MainTabNavigator = () => (
                 }
                 return (
                     <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-                        <IconComponent width={32} height={32} />
+                        {IconComponent ? <IconComponent width={32} height={32} /> : null}
                     </View>
                 );
             },
